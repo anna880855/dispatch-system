@@ -33,7 +33,9 @@ export default function Admin() {
 function AccountsTab() {
   const { users, saveUsers } = useApp();
   const [showAdd, setShowAdd] = useState(false);
+  const [editingId, setEditingId] = useState(null);
   const [nu, setNu] = useState({ username: '', password: '', name: '', role: 'manager', region: '三重' });
+  const [editForm, setEditForm] = useState({});
   const [msg, setMsg] = useState(null);
 
   async function addUser() {
@@ -44,6 +46,24 @@ function AccountsTab() {
     setShowAdd(false);
     setMsg({ type: 'success', text: '✓ 帳號已新增' });
   }
+
+  function startEdit(u) {
+    setEditingId(u.id);
+    setEditForm({ ...u });
+    setShowAdd(false);
+  }
+
+  async function saveEdit() {
+    if (!editForm.name.trim() || !editForm.username.trim() || !editForm.password) {
+      setMsg({ type: 'error', text: '姓名、帳號、密碼不能為空' }); return;
+    }
+    const dup = users.find(u => u.username === editForm.username && u.id !== editingId);
+    if (dup) { setMsg({ type: 'error', text: '此帳號名稱已被使用' }); return; }
+    await saveUsers(users.map(u => u.id === editingId ? { ...u, ...editForm } : u));
+    setEditingId(null);
+    setMsg({ type: 'success', text: '✓ 帳號已更新' });
+  }
+
   async function removeUser(id) {
     if (!window.confirm('確定要刪除此帳號？')) return;
     await saveUsers(users.filter(u => u.id !== id));
@@ -52,15 +72,17 @@ function AccountsTab() {
   return (
     <Card>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-        <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600 }}>個管師帳號管理（共 {users.length} 位）</h3>
-        <BtnSmall onClick={() => setShowAdd(v => !v)} style={{ background: C.primary, color: '#fff', border: 'none' }}>＋ 新增帳號</BtnSmall>
+        <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600 }}>帳號管理（共 {users.length} 位）</h3>
+        <BtnSmall onClick={() => { setShowAdd(v => !v); setEditingId(null); }} style={{ background: C.primary, color: '#fff', border: 'none' }}>＋ 新增帳號</BtnSmall>
       </div>
       {msg && <Alert type={msg.type}>{msg.text}</Alert>}
+
+      {/* 新增表單 */}
       {showAdd && (
         <div style={{ background: C.bg, borderRadius: 12, padding: 20, marginBottom: 20, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
           <FormField label="姓名"><Input value={nu.name} onChange={e => setNu(f => ({ ...f, name: e.target.value }))} placeholder="顯示姓名" /></FormField>
           <FormField label="帳號"><Input value={nu.username} onChange={e => setNu(f => ({ ...f, username: e.target.value }))} placeholder="登入帳號" /></FormField>
-          <FormField label="密碼"><Input value={nu.password} onChange={e => setNu(f => ({ ...f, password: e.target.value }))} placeholder="登入密碼" /></FormField>
+          <FormField label="密碼"><Input type="password" value={nu.password} onChange={e => setNu(f => ({ ...f, password: e.target.value }))} placeholder="登入密碼" /></FormField>
           <FormField label="角色">
             <Select value={nu.role} onChange={e => setNu(f => ({ ...f, role: e.target.value }))}>
               <option value="manager">個管師</option><option value="admin">管理員</option>
@@ -79,21 +101,64 @@ function AccountsTab() {
           </div>
         </div>
       )}
-      <div style={{ overflowX: 'auto' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-          <thead><tr style={{ background: C.bg }}>{['姓名', '帳號', '角色', '服務區域', '操作'].map(h => <th key={h} style={{ textAlign: 'left', padding: '10px 14px', color: C.muted, fontWeight: 500, fontSize: 12, borderBottom: `1px solid ${C.border}` }}>{h}</th>)}</tr></thead>
-          <tbody>
-            {users.map(u => (
-              <tr key={u.id} style={{ borderBottom: `1px solid ${C.border}` }}>
-                <td style={{ padding: '10px 14px', fontWeight: 500 }}>{u.name}</td>
-                <td style={{ padding: '10px 14px' }}>{u.username}</td>
-                <td style={{ padding: '10px 14px' }}><Badge color={u.role === 'admin' ? 'alert' : 'primary'}>{u.role === 'admin' ? '管理員' : '個管師'}</Badge></td>
-                <td style={{ padding: '10px 14px' }}>{u.region || '—'}</td>
-                <td style={{ padding: '10px 14px' }}>{u.id !== 'u1' && <BtnSmall onClick={() => removeUser(u.id)} style={{ color: C.alert, background: C.alertL, border: 'none', fontSize: 11 }}>刪除</BtnSmall>}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+
+      {/* 帳號列表 */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {users.map(u => (
+          <div key={u.id}>
+            {/* 一般顯示列 */}
+            {editingId !== u.id && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', background: C.bg, borderRadius: 12, border: `1px solid ${C.border}` }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 600, fontSize: 14, color: C.text }}>{u.name}</div>
+                  <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
+                    帳號：{u.username}　｜　{u.role === 'admin' ? '管理員' : `個管師・${u.region || '—'}區`}
+                  </div>
+                </div>
+                <Badge color={u.role === 'admin' ? 'alert' : 'primary'}>{u.role === 'admin' ? '管理員' : '個管師'}</Badge>
+                <BtnSmall onClick={() => startEdit(u)} style={{ fontSize: 11 }}>✏️ 修改</BtnSmall>
+                {u.id !== 'u1' && (
+                  <BtnSmall onClick={() => removeUser(u.id)} style={{ color: C.alert, background: C.alertL, border: 'none', fontSize: 11 }}>刪除</BtnSmall>
+                )}
+              </div>
+            )}
+
+            {/* 編輯列 */}
+            {editingId === u.id && (
+              <div style={{ background: C.primaryL, borderRadius: 12, padding: 20, border: `1px solid ${C.primary}` }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: C.primaryH, marginBottom: 14 }}>✏️ 修改帳號：{u.name}</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <FormField label="姓名">
+                    <Input value={editForm.name || ''} onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))} />
+                  </FormField>
+                  <FormField label="帳號">
+                    <Input value={editForm.username || ''} onChange={e => setEditForm(f => ({ ...f, username: e.target.value }))} />
+                  </FormField>
+                  <FormField label="新密碼">
+                    <Input type="password" value={editForm.password || ''} onChange={e => setEditForm(f => ({ ...f, password: e.target.value }))} placeholder="輸入新密碼" />
+                  </FormField>
+                  <FormField label="角色">
+                    <Select value={editForm.role || 'manager'} onChange={e => setEditForm(f => ({ ...f, role: e.target.value }))}>
+                      <option value="manager">個管師</option>
+                      <option value="admin">管理員</option>
+                    </Select>
+                  </FormField>
+                  {editForm.role === 'manager' && (
+                    <FormField label="服務區域">
+                      <Select value={editForm.region || '三重'} onChange={e => setEditForm(f => ({ ...f, region: e.target.value }))}>
+                        {REGIONS.map(r => <option key={r}>{r}</option>)}
+                      </Select>
+                    </FormField>
+                  )}
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+                    <BtnSmall onClick={saveEdit} style={{ background: C.primary, color: '#fff', border: 'none' }}>儲存變更</BtnSmall>
+                    <BtnSmall onClick={() => setEditingId(null)}>取消</BtnSmall>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        ))}
       </div>
     </Card>
   );
