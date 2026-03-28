@@ -355,7 +355,7 @@ function ExportTab() {
   }
 
   function exportByCode(grp) {
-    const data = cases.filter(c => grp === 'BA' ? c.codeType === 'BA' : grp === 'DA01' ? c.codeType === 'DA01' : ['BB', 'BC', 'CA', 'CB', 'CC', 'CD', 'G', 'SC'].includes(c.codeType));
+    const data = cases.filter(c => grp === 'BA' ? c.codeType === 'BA' : grp === 'DA01' ? c.codeType === 'DA01' : ['BB', 'BC', 'CA', 'CB', 'CC', 'CD', 'GA', 'SC'].includes(c.codeType));
     const name = grp === 'BA' ? 'BA碼派案紀錄' : grp === 'DA01' ? '交通車派案紀錄' : '非輪派單位照會紀錄';
     dlCSV(data.map(c => buildRow(c, grp)), `${name}_${t}.csv`);
   }
