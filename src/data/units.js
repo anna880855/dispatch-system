@@ -29,5 +29,5 @@ export const DEFAULT_ROTATING = {
 };
 
 export const DEFAULT_NON_ROTATING = {
-  BA: [], BB: [], BC: [], CA: [], CB: [], CC: [], CD: []
+  BA: [], BB: [], BC: [], CA: [], CB: [], CC: [], CD: [], G: [], SC: []
 };
