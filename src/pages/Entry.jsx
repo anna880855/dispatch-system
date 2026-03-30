@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useApp } from '../AppContext';
-import { today, daysBetween } from '../utils/helpers';
+import { today, daysBetween, NO_ENTRY_CODES } from '../utils/helpers';
 import { Card, PageHeader, BtnSmall, Badge, Input, Select, Alert, C } from '../components/UI';
 
 export default function Entry() {
@@ -14,8 +14,8 @@ export default function Entry() {
   const t = today();
 
   const myCases = currentUser?.role === 'admin' ? cases : cases.filter(c => c.managerId === currentUser?.id);
-  const pending = myCases.filter(c => !c.entryDate && c.status !== '不承接').sort((a, b) => a.referralDate?.localeCompare(b.referralDate));
-  const completed = myCases.filter(c => c.entryDate && c.status !== '不承接').sort((a, b) => b.entryDate?.localeCompare(a.entryDate));
+  const pending = myCases.filter(c => !c.entryDate && c.status !== '不承接' && !NO_ENTRY_CODES.includes(c.codeType)).sort((a, b) => a.referralDate?.localeCompare(b.referralDate));
+  const completed = myCases.filter(c => c.entryDate && c.status !== '不承接' && !NO_ENTRY_CODES.includes(c.codeType)).sort((a, b) => b.entryDate?.localeCompare(a.entryDate));
 
   function startEdit(c) {
     setEditing(c);

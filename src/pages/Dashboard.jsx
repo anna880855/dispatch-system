@@ -1,12 +1,12 @@
 import { useApp } from '../AppContext';
-import { today, daysBetween } from '../utils/helpers';
+import { today, daysBetween, NO_ENTRY_CODES } from '../utils/helpers';
 import { Card, PageHeader, BtnSmall, Badge, C } from '../components/UI';
 
 export default function Dashboard({ setPage }) {
   const { currentUser, cases } = useApp();
   const t = today();
   const myCases = currentUser?.role === 'admin' ? cases : cases.filter(c => c.managerId === currentUser?.id);
-  const trackable = myCases.filter(c => c.status !== '不承接');
+  const trackable = myCases.filter(c => c.status !== '不承接' && !NO_ENTRY_CODES.includes(c.codeType));
   const withoutEntry = trackable.filter(c => !c.entryDate);
   const overdue = withoutEntry.filter(c => daysBetween(c.referralDate, t) > 5);
   const pending = withoutEntry.filter(c => daysBetween(c.referralDate, t) <= 5);
