@@ -45,7 +45,12 @@ function AppLayout() {
     if (!currentUser) return;
     const myCases = currentUser.role === 'admin' ? cases : cases.filter(c => c.managerId === currentUser.id);
     const od = myCases.filter(c => !c.entryDate && c.status !== '不承接' && daysBetween(c.referralDate, t) > 5);
-    if (od.length > 0) setShowOverdue(true);
+    if (od.length === 0) return;
+    // 每天只提醒一次（用 localStorage 記錄今天的日期+使用者）
+    const storageKey = `od_reminded_${currentUser.id}_${t}`;
+    if (localStorage.getItem(storageKey)) return;
+    localStorage.setItem(storageKey, '1');
+    setShowOverdue(true);
   }, [currentUser, cases]);
 
   if (!currentUser) return <Login />;
