@@ -5,6 +5,8 @@ import Dashboard from './pages/Dashboard';
 import NewCase from './pages/NewCase';
 import CasesList from './pages/CasesList';
 import Entry from './pages/Entry';
+import BatchCase from './pages/BatchCase';
+import BatchCase from './pages/BatchCase';
 import Admin from './pages/Admin';
 import Sidebar from './components/Sidebar';
 import { today, daysBetween } from './utils/helpers';
@@ -73,8 +75,10 @@ function AppLayout() {
       <main style={{ flex: 1, marginLeft: 200, padding: '32px', overflowY: 'auto', maxHeight: '100vh' }}>
         {page === 'dashboard' && <Dashboard setPage={setPage} />}
         {page === 'newCase' && <NewCase setPage={setPage} />}
+        {page === 'batchCase' && <BatchCase setPage={setPage} />}
         {page === 'cases' && <CasesList />}
         {page === 'entry' && <Entry />}
+        {page === 'batch' && <BatchCase setPage={setPage} />}
         {page === 'admin' && isAdmin && <Admin />}
       </main>
       {showOverdue && overdueList.length > 0 && (

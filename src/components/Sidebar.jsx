@@ -4,6 +4,7 @@ import { useApp } from '../AppContext';
 const NAV_ITEMS = [
   { id: 'dashboard', icon: '📊', label: '總覽' },
   { id: 'newCase', icon: '➕', label: '新增派案' },
+  { id: 'batchCase', icon: '📦', label: '批次派案' },
   { id: 'cases', icon: '📋', label: '派案紀錄' },
   { id: 'entry', icon: '📅', label: '進場時效' },
 ];
