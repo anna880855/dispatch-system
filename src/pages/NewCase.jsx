@@ -159,8 +159,6 @@ function CodeRow({ row, index, total, region, units, getCurrentRotUnit, onChange
             )}
           </FormField>
         )}
-          </FormField>
-        )}
       </div>
     </div>
   );
