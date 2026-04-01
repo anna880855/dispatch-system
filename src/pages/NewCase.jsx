@@ -231,7 +231,7 @@ export default function NewCase({ setPage }) {
   }
 
   return (
-    <div>
+    <div style={{ paddingBottom: 100 }}>
       <PageHeader title="新增派案" subtitle="填一次個案資料，可新增多個碼別一次儲存" />
 
       {/* 個案基本資料 */}
@@ -301,7 +301,7 @@ export default function NewCase({ setPage }) {
 
       {msg && <Alert type={msg.type}>{msg.text}</Alert>}
 
-      <div style={{ display: 'flex', gap: 12, marginTop: 16 }}>
+      <div style={{ display: 'flex', gap: 12, marginTop: 16, position: 'sticky', bottom: 0, background: 'rgba(240,235,228,0.95)', padding: '16px 0', backdropFilter: 'blur(4px)', zIndex: 10 }}>
         <BtnPrimary style={{ flex: 1 }} onClick={handleSubmit} disabled={saving}>
           {saving ? '儲存中…' : rows.length > 1 ? `儲存全部派案（${rows.length} 個碼別）` : '儲存派案'}
         </BtnPrimary>
