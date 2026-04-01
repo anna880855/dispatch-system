@@ -97,7 +97,7 @@ function CodeRow({ row, index, total, region, units, getCurrentRotUnit, onChange
 
         {row.status === '不承接' && (
           <FormField label="不承接原因">
-            <Select value={row.rejectReason} onChange={e => { set('rejectReason', e.target.value); set('rejectReasonOther', ''); }}>
+            <Select value={row.rejectReason} onChange={e => onChange({ ...row, rejectReason: e.target.value, rejectReasonOther: '' })}>
               <option value="">請選擇</option>
               {(REJECT_REASONS[row.codeType] || REJECT_REASONS.BA).map(o => <option key={o}>{o}</option>)}
             </Select>
