@@ -136,22 +136,10 @@ function CodeRow({ row, index, total, region, units, getCurrentRotUnit, onChange
 
                 {!row.isRotating && row.codeType && ROTATING_CODES.includes(row.codeType) && (
           <FormField label="派案原因" required fullWidth>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-              {REFERRAL_REASONS.map(o => (
-                <button key={o} type="button"
-                  onClick={() => { set('referralReason', o); if(o !== '其他') set('referralReasonOther', ''); }}
-                  style={{
-                    padding: '7px 14px', borderRadius: 20,
-                    border: `1.5px solid ${row.referralReason === o ? C.primary : C.border}`,
-                    background: row.referralReason === o ? C.primaryL : C.card,
-                    color: row.referralReason === o ? C.primaryH : C.text,
-                    fontWeight: row.referralReason === o ? 600 : 400,
-                    cursor: 'pointer', fontSize: 13, fontFamily: 'inherit'
-                  }}>
-                  {row.referralReason === o ? '✓ ' : ''}{o}
-                </button>
-              ))}
-            </div>
+            <Select value={row.referralReason} onChange={e => onChange({ ...row, referralReason: e.target.value, referralReasonOther: '' })}>
+              <option value="">請選擇</option>
+              {REFERRAL_REASONS.map(o => <option key={o} value={o}>{o}</option>)}
+            </Select>
             {row.referralReason === '其他' && (
               <Input style={{ marginTop: 8 }} value={row.referralReasonOther}
                 onChange={e => set('referralReasonOther', e.target.value)}
