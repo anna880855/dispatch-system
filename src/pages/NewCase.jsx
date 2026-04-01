@@ -107,18 +107,6 @@ function CodeRow({ row, index, total, region, units, getCurrentRotUnit, onChange
           </FormField>
         )}
 
-        {!row.isRotating && row.codeType && ROTATING_CODES.includes(row.codeType) && (
-          <FormField label="派案原因" required>
-            <Select value={row.referralReason} onChange={e => { set('referralReason', e.target.value); set('referralReasonOther', ''); }}>
-              <option value="">請選擇</option>
-              {REFERRAL_REASONS.map(o => <option key={o}>{o}</option>)}
-            </Select>
-            {row.referralReason === '其他' && (
-              <Input style={{ marginTop: 6 }} value={row.referralReasonOther} onChange={e => set('referralReasonOther', e.target.value)} placeholder="請說明原因" />
-            )}
-          </FormField>
-        )}
-
         <FormField label={row.isRotating ? '派案單位（輪派）' : unitList.length > 0 ? '派案單位（可多選）' : '派案單位'} fullWidth>
           {row.isRotating ? (
             rotInfo ? (
@@ -145,6 +133,18 @@ function CodeRow({ row, index, total, region, units, getCurrentRotUnit, onChange
             <Input value={row.unit} onChange={e => set('unit', e.target.value)} placeholder={row.codeType ? '直接輸入單位名稱' : '請先選擇碼別'} />
           )}
         </FormField>
+
+        {!row.isRotating && row.codeType && ROTATING_CODES.includes(row.codeType) && (
+          <FormField label="派案原因" required fullWidth>
+            <Select value={row.referralReason} onChange={e => { set('referralReason', e.target.value); set('referralReasonOther', ''); }}>
+              <option value="">請選擇</option>
+              {REFERRAL_REASONS.map(o => <option key={o}>{o}</option>)}
+            </Select>
+            {row.referralReason === '其他' && (
+              <Input style={{ marginTop: 6 }} value={row.referralReasonOther} onChange={e => set('referralReasonOther', e.target.value)} placeholder="請說明原因" />
+            )}
+          </FormField>
+        )}
       </div>
     </div>
   );
