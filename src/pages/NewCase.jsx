@@ -134,15 +134,31 @@ function CodeRow({ row, index, total, region, units, getCurrentRotUnit, onChange
           )}
         </FormField>
 
-        {!row.isRotating && row.codeType && ROTATING_CODES.includes(row.codeType) && (
+                {!row.isRotating && row.codeType && ROTATING_CODES.includes(row.codeType) && (
           <FormField label="派案原因" required fullWidth>
-            <Select value={row.referralReason} onChange={e => { set('referralReason', e.target.value); set('referralReasonOther', ''); }}>
-              <option value="">請選擇</option>
-              {REFERRAL_REASONS.map(o => <option key={o}>{o}</option>)}
-            </Select>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {REFERRAL_REASONS.map(o => (
+                <button key={o} type="button"
+                  onClick={() => { set('referralReason', o); if(o !== '其他') set('referralReasonOther', ''); }}
+                  style={{
+                    padding: '7px 14px', borderRadius: 20,
+                    border: `1.5px solid ${row.referralReason === o ? C.primary : C.border}`,
+                    background: row.referralReason === o ? C.primaryL : C.card,
+                    color: row.referralReason === o ? C.primaryH : C.text,
+                    fontWeight: row.referralReason === o ? 600 : 400,
+                    cursor: 'pointer', fontSize: 13, fontFamily: 'inherit'
+                  }}>
+                  {row.referralReason === o ? '✓ ' : ''}{o}
+                </button>
+              ))}
+            </div>
             {row.referralReason === '其他' && (
-              <Input style={{ marginTop: 6 }} value={row.referralReasonOther} onChange={e => set('referralReasonOther', e.target.value)} placeholder="請說明原因" />
+              <Input style={{ marginTop: 8 }} value={row.referralReasonOther}
+                onChange={e => set('referralReasonOther', e.target.value)}
+                placeholder="請說明其他原因" />
             )}
+          </FormField>
+        )}
           </FormField>
         )}
       </div>
