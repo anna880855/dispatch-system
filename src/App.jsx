@@ -7,7 +7,7 @@ import CasesList from './pages/CasesList';
 import Entry from './pages/Entry';
 import Admin from './pages/Admin';
 import Sidebar from './components/Sidebar';
-import { today, daysBetween } from './utils/helpers';
+import { today, daysBetween, NO_ENTRY_CODES } from './utils/helpers';
 import { C } from './components/UI';
 
 function OverdueModal({ cases, onClose, setPage }) {
@@ -44,7 +44,7 @@ function AppLayout() {
   useEffect(() => {
     if (!currentUser) return;
     const myCases = currentUser.role === 'admin' ? cases : cases.filter(c => c.managerId === currentUser.id);
-    const od = myCases.filter(c => !c.entryDate && c.status !== '不承接' && daysBetween(c.referralDate, t) > 5);
+    const od = myCases.filter(c => !c.entryDate && c.status !== '不承接' && !NO_ENTRY_CODES.includes(c.codeType) && daysBetween(c.referralDate, t) > 5);
     if (od.length === 0) return;
     // 每天只提醒一次（用 localStorage 記錄今天的日期+使用者）
     const storageKey = `od_reminded_${currentUser.id}_${t}`;
@@ -57,7 +57,7 @@ function AppLayout() {
 
   const isAdmin = currentUser.role === 'admin';
   const myCases = isAdmin ? cases : cases.filter(c => c.managerId === currentUser.id);
-  const overdueList = myCases.filter(c => !c.entryDate && c.status !== '不承接' && daysBetween(c.referralDate, t) > 5);
+  const overdueList = myCases.filter(c => !c.entryDate && c.status !== '不承接' && !NO_ENTRY_CODES.includes(c.codeType) && daysBetween(c.referralDate, t) > 5);
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh', background: C.bg, fontFamily: "'Noto Sans TC','Microsoft JhengHei',sans-serif" }}>
