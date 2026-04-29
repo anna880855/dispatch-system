@@ -258,7 +258,7 @@ function NonRotatingTab() {
   const { units, saveUnits } = useApp();
   const [code, setCode] = useState('BA');
   const [newUnit, setNewUnit] = useState('');
-  const nonCodes = CODE_TYPES.filter(c => c !== 'DA01');
+  const nonCodes = CODE_TYPES; // 所有碼別都可設定特約單位，包含 DA01
   const list = units.nonRotating?.[code] || [];
 
   async function add() {
@@ -275,7 +275,7 @@ function NonRotatingTab() {
     const text = await file.text();
     const lines = text.replace(/\r\n/g, '\n').split('\n').filter(l => l.trim());
     const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
-    const codes = ['BA', 'BB', 'BC', 'CA', 'CB', 'CC', 'CD', 'GA', 'SC'];
+    const codes = ['BA', 'BB', 'BC', 'CA', 'CB', 'CC', 'CD', 'DA01', 'GA', 'SC'];
     const colMap = {};
     headers.forEach((h, i) => { if (codes.includes(h)) colMap[i] = h; });
     if (!Object.keys(colMap).length) { alert('找不到有效表頭（BA,BB...CD,GA,SC）'); return; }
@@ -315,7 +315,7 @@ function NonRotatingTab() {
       </div>
       <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 16 }}>
         <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>📥 批次匯入 CSV</div>
-        <p style={{ fontSize: 12, color: C.muted, marginBottom: 10 }}>表頭格式：BA,BB,BC,CA,CB,CC,CD,GA,SC</p>
+        <p style={{ fontSize: 12, color: C.muted, marginBottom: 10 }}>表頭格式：BA,BB,BC,CA,CB,CC,CD,DA01,GA,SC</p>
         <label style={{ display: 'inline-block', padding: '6px 14px', borderRadius: 8, border: `1px solid ${C.border}`, background: C.card, cursor: 'pointer', fontSize: 12 }}>
           📂 上傳 CSV<input type="file" accept=".csv" style={{ display: 'none' }} onChange={importCSV} />
         </label>
