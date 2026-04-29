@@ -18,8 +18,9 @@ export default function Dashboard({ setPage }) {
   const monthCases = myCases.filter(c => c.referralDate?.startsWith(thisMonth));
   const recent = [...myCases].sort((a, b) => b.referralDate?.localeCompare(a.referralDate)).slice(0, 10);
 
-  // 內外派比：BA碼 + 新案 + 承接 + 本月
-  const baNewAccepted = myCases.filter(c =>
+  // 內外派比：BA碼 + 新案 + 承接 + 本月（顯示所有人的資料）
+  const allCases = cases;
+  const baNewAccepted = allCases.filter(c =>
     c.codeType === 'BA' && c.caseType === '新案' && c.status === '承接' && c.referralDate?.startsWith(thisMonth)
   );
   const innerCount = baNewAccepted.filter(c => c.unit === INNER_UNIT).length;
@@ -34,6 +35,24 @@ export default function Dashboard({ setPage }) {
     { label: '逾期未填進場', val: overdue.length, color: C.alert, bg: C.alertL, icon: '⚠️', link: true },
     { label: '已完成進場', val: completed.length, color: C.success, bg: C.successL, icon: '✅', link: false },
   ];
+
+  function exportBADetail() {
+    const headers = ['照會日', '派案月份', '個案姓名', '派案單位', '內外派', '新舊案', '承接狀態'];
+    const rows = baNewAccepted.map(c => [
+      c.referralDate || '',
+      thisMonth.replace('-', '年') + '月',
+      c.clientName || '',
+      c.unit || '',
+      c.unit === INNER_UNIT ? '內派' : '外派',
+      c.caseType || '',
+      c.status || '',
+    ]);
+    const csv = [headers, ...rows].map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+    const a = document.createElement('a');
+    a.setAttribute('href', 'data:text/csv;charset=utf-8,\uFEFF' + encodeURIComponent(csv));
+    a.setAttribute('download', `BA碼內外派明細_${thisMonth}.csv`);
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  }
 
   return (
     <div>
@@ -74,7 +93,12 @@ export default function Dashboard({ setPage }) {
             <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600 }}>本月 BA 碼內外派比</h3>
             <div style={{ fontSize: 12, color: C.muted, marginTop: 3 }}>新案・承接　{thisMonth.replace('-', '年')}月</div>
           </div>
-          <div style={{ fontSize: 13, color: C.muted }}>共 {totalBA} 筆</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{ fontSize: 13, color: C.muted }}>共 {totalBA} 筆</span>
+            <BtnSmall onClick={exportBADetail} style={{ fontSize: 12, background: C.primary, color: '#fff', border: 'none' }}>
+              ⬇ 匯出 CSV
+            </BtnSmall>
+          </div>
         </div>
 
         {totalBA === 0 ? (
@@ -116,6 +140,7 @@ export default function Dashboard({ setPage }) {
             </div>
           </>
         )}
+
       </Card>
 
       {/* 最近派案紀錄 */}
