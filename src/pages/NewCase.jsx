@@ -107,7 +107,7 @@ function CodeRow({ row, index, total, region, units, getCurrentRotUnit, onChange
           </FormField>
         )}
 
-        <FormField label={row.isRotating ? '派案單位（輪派）' : unitList.length > 0 ? '派案單位（可多選）' : '派案單位'} required fullWidth>
+        <FormField label={row.isRotating ? '派案單位（輪派）' : unitList.length > 0 ? '派案單位（可多選）' : '派案單位'} required>
           {row.isRotating ? (
             rotInfo ? (
               <div style={{ background: C.warningL, borderRadius: 10, padding: '12px 16px', border: '1px solid #e8d5a0' }}>
