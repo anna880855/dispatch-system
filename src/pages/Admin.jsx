@@ -11,6 +11,7 @@ export default function Admin() {
     { id: 'rotationStatus', label: '📍 輪派進度' },
     { id: 'nonRotating', label: '📌 特約單位' },
     { id: 'export', label: '📤 匯出資料' },
+    { id: 'import', label: '📥 匯入舊資料' },
     { id: 'sheets', label: '📊 Google Sheets' },
   ];
 
@@ -25,7 +26,8 @@ export default function Admin() {
       {tab === 'rotationStatus' && <RotationStatusTab />}
       {tab === 'nonRotating' && <NonRotatingTab />}
       {tab === 'export' && <ExportTab />}
-      {tab === 'sheets' && <SheetsTab />}
+      {tab === 'import' && <ImportTab />}
+    {tab === 'sheets' && <SheetsTab />}
     </div>
   );
 }
@@ -360,10 +362,34 @@ function ExportTab() {
     dlCSV(data.map(c => buildRow(c, grp)), `${name}_${t}.csv`);
   }
 
+  function dlAll() {
+    const t = today();
+    const rows = cases.map(c => ({
+      服務區域: c.region||'', 派案日期: c.referralDate||'', 派案月份: getMonth(c.referralDate),
+      個案姓名: c.clientName||'', 個管人員: getManagerName(users, c.managerId),
+      服務碼別: c.codeType||'', 派案單位: c.unit||'', 新舊案: c.caseType||'',
+      是否為輪派: c.isRotating?'是':'否', 派案原因: c.referralReason||'',
+      承接狀態: c.status||'', 未承接原因: c.rejectReason||'',
+      進場日: c.entryDate||'',
+      逾期進場天數: c.entryDate&&daysBetween(c.referralDate,c.entryDate)>5 ? daysBetween(c.referralDate,c.entryDate)-5 : '',
+      逾期因素: c.overdueType||'', 逾期原因: c.overdueReason||'',
+    }));
+    dlCSV(rows, '全部派案紀錄_'+t+'.csv');
+  }
+
   return (
     <Card>
       <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>資料匯出</h3>
       <p style={{ color: C.muted, fontSize: 13, marginBottom: 20 }}>匯出 CSV，可直接匯入 Google Sheets 或 Excel</p>
+
+      {/* 下載全部 */}
+      <div style={{ background: C.primaryL, borderRadius: 12, padding: '16px 20px', marginBottom: 24, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div>
+          <div style={{ fontWeight: 600, fontSize: 14, color: C.primaryH }}>📋 下載全部派案名單</div>
+          <div style={{ fontSize: 12, color: C.muted, marginTop: 3 }}>共 {cases.length} 筆，包含所有碼別、所有個管師、所有月份</div>
+        </div>
+        <BtnPrimary onClick={dlAll}>⬇ 下載全部</BtnPrimary>
+      </div>
       <div style={{ display: 'flex', gap: 10, marginBottom: 20, flexWrap: 'wrap' }}>
         <Input type="month" value={month} onChange={e => setMonth(e.target.value)} style={{ width: 150 }} />
         <Select value={code} onChange={e => setCode(e.target.value)} style={{ width: 130 }}>
@@ -380,6 +406,160 @@ function ExportTab() {
             <BtnSecondary key={g} onClick={() => exportByCode(g)} style={{ fontSize: 12 }}>⬇ {l}</BtnSecondary>
           ))}
         </div>
+      </div>
+    </Card>
+  );
+}
+
+function ImportTab() {
+  const { addCase, cases } = useApp();
+  const [results, setResults] = useState(null);
+  const [importing, setImporting] = useState(false);
+
+  async function handleImport(e, sheetType) {
+    const file = e.target.files[0];
+    if (!file) return;
+    setImporting(true);
+    setResults(null);
+
+    try {
+      const text = await file.text();
+      const lines = text.replace(/
+/g, '
+').split('
+').filter(l => l.trim());
+      if (lines.length < 2) { setResults({ error: '檔案內容為空或格式錯誤' }); setImporting(false); return; }
+
+      const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
+      const rows = lines.slice(1).map(line => {
+        const cols = [];
+        let cur = '', inQ = false;
+        for (let i = 0; i < line.length; i++) {
+          if (line[i] === '"') { inQ = !inQ; }
+          else if (line[i] === ',' && !inQ) { cols.push(cur); cur = ''; }
+          else cur += line[i];
+        }
+        cols.push(cur);
+        const obj = {};
+        headers.forEach((h, i) => { obj[h] = (cols[i] || '').trim(); });
+        return obj;
+      }).filter(r => r['個案姓名'] || r['案件ID']);
+
+      let added = 0, skipped = 0;
+      const existingIds = new Set(cases.map(c => c.id));
+
+      for (const row of rows) {
+        const caseId = row['案件ID'] || '';
+        // 跳過已存在的
+        if (caseId && existingIds.has(caseId)) { skipped++; continue; }
+
+        let caseData = {};
+        if (sheetType === 'BA') {
+          caseData = {
+            id: caseId || genId(),
+            region: row['服務區域'] || '',
+            referralDate: row['派案日期'] || '',
+            clientName: row['個案姓名'] || '',
+            managerId: '',
+            codeType: row['服務碼別'] || 'BA',
+            unit: row['派案單位'] || '',
+            caseType: row['新舊案'] || '新案',
+            isRotating: row['是否為輪派'] === '是',
+            referralReason: row['派案原因'] || '',
+            status: row['承接狀態'] || '承接',
+            rejectReason: row['未承接原因'] || '',
+            entryDate: row['進場日'] || '',
+            overdueType: row['逾期因素'] || '',
+            overdueReason: row['逾期原因'] || '',
+            createdAt: new Date().toISOString(),
+            importedFromSheets: true,
+          };
+        } else if (sheetType === 'DA01') {
+          caseData = {
+            id: caseId || genId(),
+            region: row['服務區域'] || '',
+            referralDate: row['派案日期'] || '',
+            clientName: row['個案姓名'] || '',
+            managerId: '',
+            codeType: 'DA01',
+            unit: row['派車單位'] || '',
+            caseType: '新案',
+            isRotating: row['是否為輪派'] === '是',
+            status: '承接',
+            createdAt: new Date().toISOString(),
+            importedFromSheets: true,
+          };
+        } else {
+          caseData = {
+            id: caseId || genId(),
+            region: row['服務區域'] || '',
+            referralDate: row['派案日期'] || '',
+            clientName: row['個案姓名'] || '',
+            managerId: '',
+            codeType: row['派案碼別'] || '',
+            unit: row['派案單位'] || '',
+            caseType: '新案',
+            isRotating: false,
+            status: row['承接狀態'] || '承接',
+            rejectReason: row['未承接原因'] || '',
+            entryDate: row['進場日'] || '',
+            overdueType: row['逾期因素'] || '',
+            overdueReason: row['逾期原因'] || '',
+            createdAt: new Date().toISOString(),
+            importedFromSheets: true,
+          };
+        }
+
+        await addCase(caseData);
+        added++;
+      }
+
+      setResults({ added, skipped, total: rows.length });
+    } catch (err) {
+      setResults({ error: '匯入失敗：' + err.message });
+    }
+    setImporting(false);
+    e.target.value = '';
+  }
+
+  return (
+    <Card>
+      <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>📥 匯入舊資料</h3>
+      <p style={{ color: C.muted, fontSize: 13, marginBottom: 20 }}>
+        從 Google Sheets 匯出 CSV 後上傳，自動補入 Firebase。已存在的案件（依案件ID判斷）會自動跳過。
+      </p>
+
+      <div style={{ background: C.accentL, borderRadius: 10, padding: '12px 16px', marginBottom: 20, fontSize: 12, color: C.accent }}>
+        <strong>步驟：</strong><br />
+        1. Google Sheets → 對應分頁 → 檔案 → 下載 → CSV<br />
+        2. 在下方對應的分頁上傳該 CSV 檔案
+      </div>
+
+      {results && (
+        <Alert type={results.error ? 'error' : 'success'}>
+          {results.error || `✓ 匯入完成！新增 ${results.added} 筆，跳過已存在 ${results.skipped} 筆，共處理 ${results.total} 筆`}
+        </Alert>
+      )}
+
+      {importing && <Alert type="warn">匯入中，請稍候…</Alert>}
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {[
+          { type: 'BA', label: 'BA碼派案紀錄', color: C.primary },
+          { type: 'non', label: '非輪派單位照會紀錄', color: C.accent },
+          { type: 'DA01', label: '交通車派案紀錄', color: C.warning },
+        ].map(({ type, label, color }) => (
+          <div key={type} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 18px', background: C.bg, borderRadius: 12, border: `1px solid ${C.border}` }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 600, fontSize: 13, color }}>{label}</div>
+              <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>上傳對應分頁的 CSV 檔案</div>
+            </div>
+            <label style={{ padding: '8px 16px', borderRadius: 8, background: color, color: '#fff', cursor: 'pointer', fontSize: 13, fontWeight: 500, whiteSpace: 'nowrap' }}>
+              📂 上傳 CSV
+              <input type="file" accept=".csv" style={{ display: 'none' }} onChange={e => handleImport(e, type)} disabled={importing} />
+            </label>
+          </div>
+        ))}
       </div>
     </Card>
   );
