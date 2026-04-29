@@ -6,6 +6,7 @@ import { Card, PageHeader, FormField, Input, Select, BtnPrimary, BtnSecondary, B
 function initCodeRow() {
   return {
     id: genId(),
+    referralDate: today(),
     codeType: '', isRotating: false, unit: '', units: [],
     da01Count: 1, status: '承接',
     rejectReason: '', rejectReasonOther: '',
@@ -56,6 +57,10 @@ function CodeRow({ row, index, total, region, units, getCurrentRotUnit, onChange
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px 20px' }}>
+        <FormField label="照會日（派案日）" required>
+          <Input type="date" value={row.referralDate || ''} onChange={e => set('referralDate', e.target.value)} />
+        </FormField>
+
         <FormField label="服務碼別" required>
           <Select value={row.codeType} onChange={e => setCode(e.target.value)}>
             <option value="">請選擇</option>
@@ -160,7 +165,7 @@ export default function NewCase({ setPage }) {
   const managers = users.filter(u => u.role === 'manager');
 
   const [base, setBase] = useState({
-    referralDate: today(), clientName: '',
+    clientName: '',
     managerId: isManager ? currentUser.id : '',
     region: isManager ? currentUser.region : '',
     caseType: '新案',
@@ -175,7 +180,6 @@ export default function NewCase({ setPage }) {
   function removeRow(idx) { setRows(rs => rs.filter((_, i) => i !== idx)); }
 
   async function handleSubmit() {
-    if (!base.referralDate) { setMsg({ type: 'error', text: '請填寫照會日期' }); return; }
     if (!base.clientName.trim()) { setMsg({ type: 'error', text: '請填寫個案姓名' }); return; }
     if (!base.managerId) { setMsg({ type: 'error', text: '請選擇個管人員' }); return; }
     if (!base.region) { setMsg({ type: 'error', text: '請選擇服務區域' }); return; }
@@ -183,6 +187,7 @@ export default function NewCase({ setPage }) {
     for (let i = 0; i < rows.length; i++) {
       const r = rows[i];
       const label = rows.length > 1 ? `碼別 ${i + 1}：` : '';
+      if (!r.referralDate) { setMsg({ type: 'error', text: `${label}請填寫照會日期` }); return; }
       if (!r.codeType) { setMsg({ type: 'error', text: `${label}請選擇服務碼別` }); return; }
 
       if (r.status === '不承接' && !r.rejectReason) {
@@ -219,7 +224,7 @@ export default function NewCase({ setPage }) {
         const finalReferral = row.referralReason === '其他' && row.referralReasonOther ? `其他：${row.referralReasonOther}` : row.referralReason;
         const finalReject = row.rejectReason === '其他' && row.rejectReasonOther ? `其他：${row.rejectReasonOther}` : row.rejectReason;
         for (const u of unitsList) {
-          await addCase({ ...base, codeType: row.codeType, isRotating: row.isRotating, unit: u, status: row.status, referralReason: finalReferral, rejectReason: finalReject });
+          await addCase({ ...base, referralDate: row.referralDate, codeType: row.codeType, isRotating: row.isRotating, unit: u, status: row.status, referralReason: finalReferral, rejectReason: finalReject });
           totalCount++;
         }
         if (row.isRotating && ROTATING_CODES.includes(row.codeType)) {
@@ -228,7 +233,7 @@ export default function NewCase({ setPage }) {
         }
       }
       setMsg({ type: 'success', text: `✓ 已成功建立 ${totalCount} 筆派案紀錄！` });
-      setBase({ referralDate: today(), clientName: '', managerId: isManager ? currentUser.id : '', region: isManager ? currentUser.region : '', caseType: '新案' });
+      setBase({ clientName: '', managerId: isManager ? currentUser.id : '', region: isManager ? currentUser.region : '', caseType: '新案' });
       setRows([initCodeRow()]);
     } catch (e) {
       setMsg({ type: 'error', text: `儲存失敗：${e.message}` });
@@ -243,9 +248,6 @@ export default function NewCase({ setPage }) {
       <Card style={{ marginBottom: 20 }}>
         <div style={{ fontWeight: 600, fontSize: 14, color: C.text, marginBottom: 16 }}>📋 個案基本資料</div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px 24px' }}>
-          <FormField label="照會日（派案日）" required>
-            <Input type="date" value={base.referralDate} onChange={e => setBase_('referralDate', e.target.value)} />
-          </FormField>
           <FormField label="個案姓名" required>
             <Input value={base.clientName} onChange={e => setBase_('clientName', e.target.value)} placeholder="請輸入個案姓名" />
           </FormField>
