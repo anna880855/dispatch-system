@@ -423,15 +423,17 @@ function SheetsTab() {
   }
   if(tab.getLastRow() === 0) tab.appendRow(headers);
 
+  var idCol = headers.length - 1;
+
   if(p.action === 'add'){
     var row;
     if(code === 'BA') row = [p.region,p.referralDate,p.month,p.clientName,p.manager,p.codeType,p.unit,p.caseType,p.isRotating,p.referralReason,p.status,p.rejectReason,p.entryDate,p.odDays,p.overdueType,p.overdueReason,p.caseId];
     else if(code === 'DA01') row = [p.region,p.referralDate,p.month,p.clientName,p.unit,p.manager,p.isRotating,p.caseId];
     else row = [p.region,p.referralDate,p.month,p.clientName,p.manager,p.codeType,p.unit,p.status,p.rejectReason,p.entryDate,p.odDays,p.overdueType,p.overdueReason,p.caseId];
     tab.appendRow(row);
+
   } else if(p.action === 'update'){
     var rows = tab.getDataRange().getValues();
-    var idCol = headers.length - 1;
     for(var i = 1; i < rows.length; i++){
       if(rows[i][idCol] === p.caseId){
         if(code === 'BA'){ tab.getRange(i+1,13).setValue(p.entryDate); tab.getRange(i+1,14).setValue(p.odDays); tab.getRange(i+1,15).setValue(p.overdueType); tab.getRange(i+1,16).setValue(p.overdueReason); }
@@ -439,7 +441,18 @@ function SheetsTab() {
         break;
       }
     }
+
+  } else if(p.action === 'delete'){
+    // 找到對應列並刪除整列
+    var rows = tab.getDataRange().getValues();
+    for(var i = rows.length - 1; i >= 1; i--){
+      if(rows[i][idCol] === p.caseId){
+        tab.deleteRow(i + 1);
+        break;
+      }
+    }
   }
+
   return ContentService.createTextOutput('OK');
 }`;
 

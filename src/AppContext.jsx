@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { createContext, useContext, useState, useEffect } from 'react';
 import { fbGet, fbSet, fbUpdate, fbRemove, objToArr, arrToObj } from './utils/firebase';
 import { genId, today, daysBetween, getMonth, getManagerName } from './utils/helpers';
 import { DEFAULT_ROTATING, DEFAULT_NON_ROTATING, DEFAULT_ROTATION_INDEX } from './data/units';
@@ -16,10 +16,9 @@ export function AppProvider({ children }) {
   const [cases, setCases] = useState([]);
   const [rotationIndex, setRotationIndex] = useState({ ...DEFAULT_ROTATION_INDEX });
   const [sheetsConfig, setSheetsConfig] = useState({ scriptUrl: '' });
-  const [fbStatus, setFbStatus] = useState('connecting'); // connecting | connected | offline
+  const [fbStatus, setFbStatus] = useState('connecting');
   const [ready, setReady] = useState(false);
 
-  // Load Firebase data in background
   useEffect(() => {
     loadFromFirebase();
     const poller = setInterval(pollCases, 15000);
@@ -29,7 +28,6 @@ export function AppProvider({ children }) {
   async function loadFromFirebase() {
     try {
       const timeout = (p, ms = 8000) => Promise.race([p, new Promise((_, r) => setTimeout(() => r(new Error('timeout')), ms))]);
-
       const [fbUsers, fbUnits, fbCases, fbRot, fbSheets] = await Promise.all([
         timeout(fbGet('users')),
         timeout(fbGet('units')),
@@ -73,7 +71,8 @@ export function AppProvider({ children }) {
 
   // ── Auth ──
   function login(username, password) {
-    const user = users.find(u => u.username === username && u.password === password);
+    const allUsers = users.length ? users : DEFAULT_USERS;
+    const user = allUsers.find(u => u.username === username && u.password === password);
     if (!user) return false;
     setCurrentUser(user);
     return true;
@@ -97,8 +96,11 @@ export function AppProvider({ children }) {
   }
 
   async function deleteCase(id) {
+    const caseToDelete = cases.find(c => c.id === id);
     setCases(prev => prev.filter(c => c.id !== id));
     await fbRemove(`cases/${id}`);
+    // 同步刪除到 Google Sheets
+    if (caseToDelete) syncToSheets(caseToDelete, 'delete');
   }
 
   // ── Users ──
@@ -146,6 +148,20 @@ export function AppProvider({ children }) {
   function syncToSheets(caseData, action) {
     const url = sheetsConfig?.scriptUrl;
     if (!url) return;
+
+    if (action === 'delete') {
+      // 刪除只需要 caseId 和 codeType
+      const params = {
+        action: 'delete',
+        caseId: caseData.id || '',
+        codeType: caseData.codeType || '',
+      };
+      const qs = Object.keys(params).map(k => `${encodeURIComponent(k)}=${encodeURIComponent(params[k])}`).join('&');
+      const img = new Image();
+      img.src = `${url}?${qs}`;
+      return;
+    }
+
     const entryDays = caseData.entryDate ? daysBetween(caseData.referralDate, caseData.entryDate) : '';
     const odDays = entryDays && entryDays > 5 ? entryDays - 5 : '';
     const params = {
