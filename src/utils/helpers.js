@@ -24,9 +24,9 @@ export function getManagerName(users, managerId) {
 }
 
 export const REGIONS = ['三重', '中和', '新莊', '板橋'];
-export const CODE_TYPES = ['BA', 'BB', 'BC', 'CA', 'CB', 'CC', 'CD', 'DA01', 'GA', 'SC'];
+export const CODE_TYPES = ['BA', 'BB', 'BC', 'CA', 'CB', 'CC', 'CD', 'DA01', 'BA09', 'GA', 'SC'];
 export const ROTATING_CODES = ['BA', 'DA01'];
-export const NO_ENTRY_CODES = ['DA01', 'GA', 'SC'];
+export const NO_ENTRY_CODES = ['DA01', 'BA09', 'GA', 'SC'];
 
 export const REJECT_REASONS = {
   BA: ['服務量能已滿', '未及時回應', '違規暫停派案', '其他'],
@@ -38,6 +38,7 @@ export const REJECT_REASONS = {
   CD: ['服務量能已滿', '專業不符', '其他'],
   DA01: ['量能不足', '逾期未回應', '其他'],
   GA: ['服務量能已滿', '專業不符', '其他'],
+  BA09: ['服務量能已滿', '專業不符', '其他'],
   SC: ['服務量能已滿', '專業不符', '其他'],
 };
 

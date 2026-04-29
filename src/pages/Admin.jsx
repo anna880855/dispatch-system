@@ -313,7 +313,7 @@ function NonRotatingTab() {
       </div>
       <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 16 }}>
         <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>📥 批次匯入 CSV</div>
-        <p style={{ fontSize: 12, color: C.muted, marginBottom: 10 }}>表頭格式：BA,BB,BC,CA,CB,CC,CD,DA01,GA,SC</p>
+        <p style={{ fontSize: 12, color: C.muted, marginBottom: 10 }}>表頭格式：BA,BB,BC,CA,CB,CC,CD,DA01,BA09,GA,SC</p>
         <label style={{ display: 'inline-block', padding: '6px 14px', borderRadius: 8, border: `1px solid ${C.border}`, background: C.card, cursor: 'pointer', fontSize: 12 }}>
           📂 上傳 CSV<input type="file" accept=".csv" style={{ display: 'none' }} onChange={importCSV} />
         </label>
@@ -355,7 +355,7 @@ function ExportTab() {
   }
 
   function exportByCode(grp) {
-    const data = cases.filter(c => grp === 'BA' ? c.codeType === 'BA' : grp === 'DA01' ? c.codeType === 'DA01' : ['BB', 'BC', 'CA', 'CB', 'CC', 'CD', 'GA', 'SC'].includes(c.codeType));
+    const data = cases.filter(c => grp === 'BA' ? c.codeType === 'BA' : grp === 'DA01' ? c.codeType === 'DA01' : ['BB', 'BC', 'CA', 'CB', 'CC', 'CD', 'BA09', 'GA', 'SC'].includes(c.codeType));
     const name = grp === 'BA' ? 'BA碼派案紀錄' : grp === 'DA01' ? '交通車派案紀錄' : '非輪派單位照會紀錄';
     dlCSV(data.map(c => buildRow(c, grp)), `${name}_${t}.csv`);
   }
