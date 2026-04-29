@@ -273,9 +273,7 @@ function NonRotatingTab() {
   async function importCSV(e) {
     const file = e.target.files[0]; if (!file) return;
     const text = await file.text();
-    const lines = text.replace(/\r\n/g, '\n').split('\n').filter(l => l.trim());
-    const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
-    const codes = ['BA', 'BB', 'BC', 'CA', 'CB', 'CC', 'CD', 'DA01', 'GA', 'SC'];
+      const lines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n').filter(function(l){ return l.trim(); });
     const colMap = {};
     headers.forEach((h, i) => { if (codes.includes(h)) colMap[i] = h; });
     if (!Object.keys(colMap).length) { alert('找不到有效表頭（BA,BB...CD,GA,SC）'); return; }
@@ -424,10 +422,7 @@ function ImportTab() {
 
     try {
       const text = await file.text();
-      const lines = text.replace(/
-/g, '
-').split('
-').filter(l => l.trim());
+      const lines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n').filter(function(l){ return l.trim(); });
       if (lines.length < 2) { setResults({ error: '檔案內容為空或格式錯誤' }); setImporting(false); return; }
 
       const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
