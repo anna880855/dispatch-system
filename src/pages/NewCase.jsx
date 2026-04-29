@@ -97,7 +97,8 @@ function CodeRow({ row, index, total, region, units, getCurrentRotUnit, onChange
 
         {row.status === '不承接' && (
           <FormField label="不承接原因">
-            <Select value={row.rejectReason} onChange={e => { set('rejectReason', e.target.value); set('rejectReasonOther', ''); }}>
+            {/* 修正：合併成單次 onChange，避免第二次覆蓋第一次 */}
+            <Select value={row.rejectReason} onChange={e => onChange({ ...row, rejectReason: e.target.value, rejectReasonOther: '' })}>
               <option value="">請選擇</option>
               {(REJECT_REASONS[row.codeType] || REJECT_REASONS.BA).map(o => <option key={o}>{o}</option>)}
             </Select>
@@ -136,7 +137,8 @@ function CodeRow({ row, index, total, region, units, getCurrentRotUnit, onChange
 
         {!row.isRotating && row.codeType && ROTATING_CODES.includes(row.codeType) && (
           <FormField label="派案原因" required>
-            <Select value={row.referralReason} onChange={e => { set('referralReason', e.target.value); set('referralReasonOther', ''); }}>
+            {/* 修正：合併成單次 onChange，避免第二次覆蓋第一次 */}
+            <Select value={row.referralReason} onChange={e => onChange({ ...row, referralReason: e.target.value, referralReasonOther: '' })}>
               <option value="">請選擇</option>
               {REFERRAL_REASONS.map(o => <option key={o} value={o}>{o}</option>)}
             </Select>
@@ -145,8 +147,6 @@ function CodeRow({ row, index, total, region, units, getCurrentRotUnit, onChange
                 onChange={e => set('referralReasonOther', e.target.value)}
                 placeholder="請說明其他原因" />
             )}
-
-        
           </FormField>
         )}
       </div>
@@ -175,29 +175,24 @@ export default function NewCase({ setPage }) {
   function removeRow(idx) { setRows(rs => rs.filter((_, i) => i !== idx)); }
 
   async function handleSubmit() {
-    // 基本資料驗證
     if (!base.referralDate) { setMsg({ type: 'error', text: '請填寫照會日期' }); return; }
     if (!base.clientName.trim()) { setMsg({ type: 'error', text: '請填寫個案姓名' }); return; }
     if (!base.managerId) { setMsg({ type: 'error', text: '請選擇個管人員' }); return; }
     if (!base.region) { setMsg({ type: 'error', text: '請選擇服務區域' }); return; }
 
-    // 碼別列驗證
     for (let i = 0; i < rows.length; i++) {
       const r = rows[i];
       const label = rows.length > 1 ? `碼別 ${i + 1}：` : '';
       if (!r.codeType) { setMsg({ type: 'error', text: `${label}請選擇服務碼別` }); return; }
 
-      // 承接狀態驗證
       if (r.status === '不承接' && !r.rejectReason) {
         setMsg({ type: 'error', text: `${label}請選擇不承接原因` }); return;
       }
 
-      // 非輪派原因驗證（BA/DA01 非輪派才需要）
       if (!r.isRotating && ROTATING_CODES.includes(r.codeType) && !r.referralReason) {
         setMsg({ type: 'error', text: `${label}請選擇派案原因` }); return;
       }
 
-      // 派案單位驗證（有清單時必填）
       if (r.isRotating) {
         const rot = base.region && r.codeType ? getCurrentRotUnit(base.region, r.codeType) : null;
         if (!rot) { setMsg({ type: 'error', text: `${label}尚未設定輪派清單，請至管理後台新增` }); return; }
@@ -245,7 +240,6 @@ export default function NewCase({ setPage }) {
     <div>
       <PageHeader title="新增派案" subtitle="填一次個案資料，可新增多個碼別一次儲存" />
 
-      {/* 個案基本資料 */}
       <Card style={{ marginBottom: 20 }}>
         <div style={{ fontWeight: 600, fontSize: 14, color: C.text, marginBottom: 16 }}>📋 個案基本資料</div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px 24px' }}>
@@ -289,7 +283,6 @@ export default function NewCase({ setPage }) {
         </div>
       </Card>
 
-      {/* 碼別列 */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
         <div style={{ fontWeight: 600, fontSize: 14, color: C.text }}>
           📌 服務碼別
