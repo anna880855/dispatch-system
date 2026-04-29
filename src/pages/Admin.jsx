@@ -273,21 +273,24 @@ function NonRotatingTab() {
   async function importCSV(e) {
     const file = e.target.files[0]; if (!file) return;
     const text = await file.text();
-      const lines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n').filter(function(l){ return l.trim(); });
+    const lines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n').filter(function(l){ return l.trim(); });
+    if (lines.length < 2) { alert('檔案內容為空或格式錯誤'); return; }
+    const headers = lines[0].split(',').map(function(h){ return h.trim().replace(/"/g, ''); });
+    const codes = ['BA', 'BB', 'BC', 'CA', 'CB', 'CC', 'CD', 'DA01', 'BA09', 'GA', 'SC'];
     const colMap = {};
-    headers.forEach((h, i) => { if (codes.includes(h)) colMap[i] = h; });
-    if (!Object.keys(colMap).length) { alert('找不到有效表頭（BA,BB...CD,GA,SC）'); return; }
-    const newData = { ...units.nonRotating };
-    codes.forEach(c => newData[c] = []);
-    lines.slice(1).forEach(line => {
+    headers.forEach(function(h, i){ if (codes.includes(h)) colMap[i] = h; });
+    if (!Object.keys(colMap).length) { alert('找不到有效表頭，請確認欄位名稱（BA,BB,BC,CA,CB,CC,CD,DA01,BA09,GA,SC）'); return; }
+    const newData = Object.assign({}, units.nonRotating);
+    codes.forEach(function(c){ newData[c] = []; });
+    lines.slice(1).forEach(function(line){
       const cols = line.split(',');
-      Object.entries(colMap).forEach(([idx, code]) => {
-        const val = cols[idx]?.trim().replace(/"/g, '');
+      Object.entries(colMap).forEach(function([idx, code]){
+        const val = (cols[idx] || '').trim().replace(/"/g, '');
         if (val) newData[code].push(val);
       });
     });
-    await saveUnits({ ...units, nonRotating: newData });
-    alert('✅ 匯入成功！');
+    await saveUnits(Object.assign({}, units, { nonRotating: newData }));
+    alert('✅ 匯入成功！共匯入 ' + codes.map(function(c){ return c + ':' + (newData[c]||[]).length + '筆'; }).filter(function(s){ return s.indexOf(':0') === -1; }).join('、'));
   }
 
   return (
