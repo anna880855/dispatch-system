@@ -63,7 +63,7 @@ function CodeRow({ row, index, total, region, units, getCurrentRotUnit, onChange
           </Select>
         </FormField>
 
-        <FormField label="承接狀態">
+        <FormField label="承接狀態" required>
           <Select value={row.status} onChange={e => set('status', e.target.value)}>
             <option>承接</option><option>不承接</option>
           </Select>
@@ -83,7 +83,7 @@ function CodeRow({ row, index, total, region, units, getCurrentRotUnit, onChange
         )}
 
         {row.isRotating && isDA01 && (
-          <FormField label="本次派出幾間">
+          <FormField label="本次派出幾間" required>
             <div style={{ display: 'flex', gap: 8 }}>
               {[1, 2, 3].map(n => (
                 <button key={n} onClick={() => set('da01Count', n)}
@@ -97,7 +97,7 @@ function CodeRow({ row, index, total, region, units, getCurrentRotUnit, onChange
 
         {row.status === '不承接' && (
           <FormField label="不承接原因">
-            <Select value={row.rejectReason} onChange={e => onChange({ ...row, rejectReason: e.target.value, rejectReasonOther: '' })}>
+            <Select value={row.rejectReason} onChange={e => { set('rejectReason', e.target.value); set('rejectReasonOther', ''); }}>
               <option value="">請選擇</option>
               {(REJECT_REASONS[row.codeType] || REJECT_REASONS.BA).map(o => <option key={o}>{o}</option>)}
             </Select>
@@ -107,7 +107,7 @@ function CodeRow({ row, index, total, region, units, getCurrentRotUnit, onChange
           </FormField>
         )}
 
-        <FormField label={row.isRotating ? '派案單位（輪派）' : unitList.length > 0 ? '派案單位（可多選）' : '派案單位'} fullWidth>
+        <FormField label={row.isRotating ? '派案單位（輪派）' : unitList.length > 0 ? '派案單位（可多選）' : '派案單位'} required fullWidth>
           {row.isRotating ? (
             rotInfo ? (
               <div style={{ background: C.warningL, borderRadius: 10, padding: '12px 16px', border: '1px solid #e8d5a0' }}>
@@ -136,10 +136,22 @@ function CodeRow({ row, index, total, region, units, getCurrentRotUnit, onChange
 
                 {!row.isRotating && row.codeType && ROTATING_CODES.includes(row.codeType) && (
           <FormField label="派案原因" required fullWidth>
-            <Select value={row.referralReason} onChange={e => onChange({ ...row, referralReason: e.target.value, referralReasonOther: '' })}>
-              <option value="">請選擇</option>
-              {REFERRAL_REASONS.map(o => <option key={o} value={o}>{o}</option>)}
-            </Select>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {REFERRAL_REASONS.map(o => (
+                <button key={o} type="button"
+                  onClick={() => { set('referralReason', o); if(o !== '其他') set('referralReasonOther', ''); }}
+                  style={{
+                    padding: '7px 14px', borderRadius: 20,
+                    border: `1.5px solid ${row.referralReason === o ? C.primary : C.border}`,
+                    background: row.referralReason === o ? C.primaryL : C.card,
+                    color: row.referralReason === o ? C.primaryH : C.text,
+                    fontWeight: row.referralReason === o ? 600 : 400,
+                    cursor: 'pointer', fontSize: 13, fontFamily: 'inherit'
+                  }}>
+                  {row.referralReason === o ? '✓ ' : ''}{o}
+                </button>
+              ))}
+            </div>
             {row.referralReason === '其他' && (
               <Input style={{ marginTop: 8 }} value={row.referralReasonOther}
                 onChange={e => set('referralReasonOther', e.target.value)}
@@ -173,14 +185,35 @@ export default function NewCase({ setPage }) {
   function removeRow(idx) { setRows(rs => rs.filter((_, i) => i !== idx)); }
 
   async function handleSubmit() {
-    if (!base.clientName.trim() || !base.managerId || !base.region) {
-      setMsg({ type: 'error', text: '請填寫個案姓名、個管人員、服務區域' }); return;
-    }
+    // 基本資料驗證
+    if (!base.referralDate) { setMsg({ type: 'error', text: '請填寫照會日期' }); return; }
+    if (!base.clientName.trim()) { setMsg({ type: 'error', text: '請填寫個案姓名' }); return; }
+    if (!base.managerId) { setMsg({ type: 'error', text: '請選擇個管人員' }); return; }
+    if (!base.region) { setMsg({ type: 'error', text: '請選擇服務區域' }); return; }
+
+    // 碼別列驗證
     for (let i = 0; i < rows.length; i++) {
       const r = rows[i];
-      if (!r.codeType) { setMsg({ type: 'error', text: `碼別 ${i + 1}：請選擇服務碼別` }); return; }
+      const label = rows.length > 1 ? `碼別 ${i + 1}：` : '';
+      if (!r.codeType) { setMsg({ type: 'error', text: `${label}請選擇服務碼別` }); return; }
+
+      // 承接狀態驗證
+      if (r.status === '不承接' && !r.rejectReason) {
+        setMsg({ type: 'error', text: `${label}請選擇不承接原因` }); return;
+      }
+
+      // 非輪派原因驗證（BA/DA01 非輪派才需要）
       if (!r.isRotating && ROTATING_CODES.includes(r.codeType) && !r.referralReason) {
-        setMsg({ type: 'error', text: `碼別 ${i + 1}：請選擇派案原因` }); return;
+        setMsg({ type: 'error', text: `${label}請選擇派案原因` }); return;
+      }
+
+      // 派案單位驗證（有清單時必填）
+      if (r.isRotating) {
+        const rot = base.region && r.codeType ? getCurrentRotUnit(base.region, r.codeType) : null;
+        if (!rot) { setMsg({ type: 'error', text: `${label}尚未設定輪派清單，請至管理後台新增` }); return; }
+      } else {
+        const hasUnit = r.units.length > 0 || r.unit.trim();
+        if (!hasUnit) { setMsg({ type: 'error', text: `${label}請選擇或輸入派案單位` }); return; }
       }
     }
 
@@ -258,7 +291,7 @@ export default function NewCase({ setPage }) {
               </Select>
             )}
           </FormField>
-          <FormField label="新舊案">
+          <FormField label="新舊案" required>
             <Select value={base.caseType} onChange={e => setBase_('caseType', e.target.value)}>
               <option>新案</option><option>舊案</option>
             </Select>

@@ -2,17 +2,31 @@ import { useApp } from '../AppContext';
 import { today, daysBetween, NO_ENTRY_CODES } from '../utils/helpers';
 import { Card, PageHeader, BtnSmall, Badge, C } from '../components/UI';
 
+const INNER_UNIT = '齡活股份有限公司附設新北市私立齡活居家長照機構';
+
 export default function Dashboard({ setPage }) {
   const { currentUser, cases } = useApp();
   const t = today();
+  const thisMonth = t.slice(0, 7);
+
   const myCases = currentUser?.role === 'admin' ? cases : cases.filter(c => c.managerId === currentUser?.id);
   const trackable = myCases.filter(c => c.status !== '不承接' && !NO_ENTRY_CODES.includes(c.codeType));
   const withoutEntry = trackable.filter(c => !c.entryDate);
   const overdue = withoutEntry.filter(c => daysBetween(c.referralDate, t) > 5);
   const pending = withoutEntry.filter(c => daysBetween(c.referralDate, t) <= 5);
   const completed = trackable.filter(c => c.entryDate);
-  const monthCases = myCases.filter(c => c.referralDate?.startsWith(t.slice(0, 7)));
+  const monthCases = myCases.filter(c => c.referralDate?.startsWith(thisMonth));
   const recent = [...myCases].sort((a, b) => b.referralDate?.localeCompare(a.referralDate)).slice(0, 10);
+
+  // 內外派比：BA碼 + 新案 + 承接 + 本月
+  const baNewAccepted = myCases.filter(c =>
+    c.codeType === 'BA' && c.caseType === '新案' && c.status === '承接' && c.referralDate?.startsWith(thisMonth)
+  );
+  const innerCount = baNewAccepted.filter(c => c.unit === INNER_UNIT).length;
+  const outerCount = baNewAccepted.filter(c => c.unit !== INNER_UNIT).length;
+  const totalBA = innerCount + outerCount;
+  const innerRatio = totalBA > 0 ? ((innerCount / totalBA) * 100).toFixed(1) : null;
+  const outerRatio = totalBA > 0 ? ((outerCount / totalBA) * 100).toFixed(1) : null;
 
   const stats = [
     { label: '本月派案', val: monthCases.length, color: C.accent, bg: C.accentL, icon: '📋', link: false },
@@ -36,7 +50,8 @@ export default function Dashboard({ setPage }) {
         </div>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 16, marginBottom: 28 }}>
+      {/* 統計卡片 */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 16, marginBottom: 20 }}>
         {stats.map(s => (
           <div
             key={s.label}
@@ -52,6 +67,58 @@ export default function Dashboard({ setPage }) {
         ))}
       </div>
 
+      {/* 本月 BA 碼內外派比 */}
+      <Card style={{ marginBottom: 20 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+          <div>
+            <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600 }}>本月 BA 碼內外派比</h3>
+            <div style={{ fontSize: 12, color: C.muted, marginTop: 3 }}>新案・承接　{thisMonth.replace('-', '年')}月</div>
+          </div>
+          <div style={{ fontSize: 13, color: C.muted }}>共 {totalBA} 筆</div>
+        </div>
+
+        {totalBA === 0 ? (
+          <div style={{ color: C.muted, fontSize: 13, textAlign: 'center', padding: '16px 0' }}>本月尚無 BA 碼新案承接紀錄</div>
+        ) : (
+          <>
+            {/* 比例長條 */}
+            <div style={{ display: 'flex', borderRadius: 8, overflow: 'hidden', height: 28, marginBottom: 14 }}>
+              {innerCount > 0 && (
+                <div style={{ width: `${innerRatio}%`, background: C.primary, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 12, fontWeight: 600, transition: 'width 0.3s' }}>
+                  {innerRatio}%
+                </div>
+              )}
+              {outerCount > 0 && (
+                <div style={{ width: `${outerRatio}%`, background: C.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 12, fontWeight: 600, transition: 'width 0.3s' }}>
+                  {outerRatio}%
+                </div>
+              )}
+            </div>
+
+            {/* 數字明細 */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div style={{ background: C.primaryL, borderRadius: 12, padding: '14px 18px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                  <div style={{ width: 10, height: 10, borderRadius: '50%', background: C.primary, flexShrink: 0 }} />
+                  <span style={{ fontSize: 12, color: C.muted, fontWeight: 500 }}>內派（齡活）</span>
+                </div>
+                <div style={{ fontSize: 28, fontWeight: 700, color: C.primaryH, lineHeight: 1 }}>{innerCount}</div>
+                <div style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>佔 {innerRatio}%</div>
+              </div>
+              <div style={{ background: C.accentL, borderRadius: 12, padding: '14px 18px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                  <div style={{ width: 10, height: 10, borderRadius: '50%', background: C.accent, flexShrink: 0 }} />
+                  <span style={{ fontSize: 12, color: C.muted, fontWeight: 500 }}>外派（其他單位）</span>
+                </div>
+                <div style={{ fontSize: 28, fontWeight: 700, color: C.accent, lineHeight: 1 }}>{outerCount}</div>
+                <div style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>佔 {outerRatio}%</div>
+              </div>
+            </div>
+          </>
+        )}
+      </Card>
+
+      {/* 最近派案紀錄 */}
       <Card>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
           <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600 }}>最近派案紀錄</h3>
