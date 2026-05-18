@@ -342,9 +342,9 @@ function ExportTab() {
     const od = days && days > 5 ? days - 5 : '';
     const mgr = getManagerName(users, c.managerId);
     const mon = getMonth(c.referralDate);
-    if (type === 'BA') return { 服務區域: c.region, 派案日期: c.referralDate, 派案月份: mon, 個案姓名: c.clientName, 個管人員: mgr, 服務碼別: c.codeType, 派案單位: c.unit, 新舊案: c.caseType, 是否為輪派: c.isRotating ? '是' : '否', 派案原因: c.referralReason, 承接狀態: c.status, 未承接原因: c.rejectReason, 進場日: c.entryDate, 逾期進場天數: od, 逾期因素: c.overdueType, 逾期原因: c.overdueReason };
-    if (type === 'DA01') return { 服務區域: c.region, 派案日期: c.referralDate, 派車月份: mon, 個案姓名: c.clientName, 派車單位: c.unit, 個管人員: mgr, 是否為輪派: c.isRotating ? '是' : '否' };
-    return { 服務區域: c.region, 派案日期: c.referralDate, 派案月份: mon, 個案姓名: c.clientName, 個管人員: mgr, 派案碼別: c.codeType, 派案單位: c.unit, 承接狀態: c.status, 未承接原因: c.rejectReason, 進場日: c.entryDate, 逾期進場天數: od, 逾期因素: c.overdueType, 逾期原因: c.overdueReason };
+    if (type === 'BA') return { 服務區域: c.region, 派案日期: c.referralDate, 派案月份: mon, 個案姓名: c.clientName, 個管人員: mgr, 服務碼別: c.codeType, 派案單位: c.unit, 新舊案: c.caseType, 是否為輪派: c.isRotating ? '是' : '否', 派案原因: c.referralReason, 承接狀態: c.status, 未承接原因: c.rejectReason, 進場日: c.entryDate, 逾期進場天數: od, 逾期因素: c.overdueType, 逾期原因: c.overdueReason, 案件ID: c.id || '' };
+    if (type === 'DA01') return { 服務區域: c.region, 派案日期: c.referralDate, 派車月份: mon, 個案姓名: c.clientName, 派車單位: c.unit, 個管人員: mgr, 是否為輪派: c.isRotating ? '是' : '否', 案件ID: c.id || '' };
+    return { 服務區域: c.region, 派案日期: c.referralDate, 派案月份: mon, 個案姓名: c.clientName, 個管人員: mgr, 派案碼別: c.codeType, 派案單位: c.unit, 承接狀態: c.status, 未承接原因: c.rejectReason, 進場日: c.entryDate, 逾期進場天數: od, 逾期因素: c.overdueType, 逾期原因: c.overdueReason, 案件ID: c.id || '' };
   }
 
   function dlCSV(rows, filename) {
