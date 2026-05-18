@@ -84,7 +84,27 @@ export function AppProvider({ children }) {
     const newCase = { ...caseData, id: genId(), createdAt: new Date().toISOString() };
     setCases(prev => [...prev, newCase]);
     await fbSet(`cases/${newCase.id}`, newCase);
-    syncToSheets(newCase, 'add');
+    // 直接從 Firebase 取得最新 sheetsConfig，避免 closure 抓到空值
+    const freshConfig = await fbGet('sheetsConfig');
+    const url = (freshConfig && freshConfig.scriptUrl) || sheetsConfig?.scriptUrl;
+    if (url) {
+      const entryDays = newCase.entryDate ? daysBetween(newCase.referralDate, newCase.entryDate) : '';
+      const odDays = entryDays && entryDays > 5 ? entryDays - 5 : '';
+      const params = {
+        action: 'add', caseId: newCase.id || '',
+        region: newCase.region || '', referralDate: newCase.referralDate || '',
+        month: getMonth(newCase.referralDate), clientName: newCase.clientName || '',
+        manager: getManagerName(users, newCase.managerId), codeType: newCase.codeType || '',
+        unit: newCase.unit || '', caseType: newCase.caseType || '',
+        isRotating: newCase.isRotating ? '是' : '否', referralReason: newCase.referralReason || '',
+        status: newCase.status || '', rejectReason: newCase.rejectReason || '',
+        entryDate: newCase.entryDate || '', odDays, overdueType: newCase.overdueType || '',
+        overdueReason: newCase.overdueReason || ''
+      };
+      const qs = Object.keys(params).map(k => encodeURIComponent(k) + '=' + encodeURIComponent(params[k])).join('&');
+      const img = new Image();
+      img.src = url + '?' + qs;
+    }
     return newCase;
   }
 
@@ -92,7 +112,29 @@ export function AppProvider({ children }) {
     setCases(prev => prev.map(c => c.id === id ? { ...c, ...updates } : c));
     await fbUpdate(`cases/${id}`, updates);
     const updated = cases.find(c => c.id === id);
-    if (updated) syncToSheets({ ...updated, ...updates }, 'update');
+    if (updated) {
+      const freshConfig = await fbGet('sheetsConfig');
+      const url = (freshConfig && freshConfig.scriptUrl) || sheetsConfig?.scriptUrl;
+      if (url) {
+        const caseData = { ...updated, ...updates };
+        const entryDays = caseData.entryDate ? daysBetween(caseData.referralDate, caseData.entryDate) : '';
+        const odDays = entryDays && entryDays > 5 ? entryDays - 5 : '';
+        const params = {
+          action: 'update', caseId: caseData.id || '',
+          region: caseData.region || '', referralDate: caseData.referralDate || '',
+          month: getMonth(caseData.referralDate), clientName: caseData.clientName || '',
+          manager: getManagerName(users, caseData.managerId), codeType: caseData.codeType || '',
+          unit: caseData.unit || '', caseType: caseData.caseType || '',
+          isRotating: caseData.isRotating ? '是' : '否', referralReason: caseData.referralReason || '',
+          status: caseData.status || '', rejectReason: caseData.rejectReason || '',
+          entryDate: caseData.entryDate || '', odDays, overdueType: caseData.overdueType || '',
+          overdueReason: caseData.overdueReason || ''
+        };
+        const qs = Object.keys(params).map(k => encodeURIComponent(k) + '=' + encodeURIComponent(params[k])).join('&');
+        const img = new Image();
+        img.src = url + '?' + qs;
+      }
+    }
   }
 
   async function deleteCase(id) {
