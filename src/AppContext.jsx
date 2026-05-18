@@ -100,7 +100,22 @@ export function AppProvider({ children }) {
     setCases(prev => prev.filter(c => c.id !== id));
     await fbRemove(`cases/${id}`);
     // 同步刪除到 Google Sheets
-    if (caseToDelete) syncToSheets(caseToDelete, 'delete');
+    // 直接從 Firebase 取得最新 sheetsConfig，避免 closure 抓到舊值
+    if (caseToDelete) {
+      const freshConfig = await fbGet('sheetsConfig');
+      const url = freshConfig?.scriptUrl || sheetsConfig?.scriptUrl;
+      if (url && caseToDelete.id) {
+        const params = {
+          action: 'delete',
+          caseId: caseToDelete.id,
+          codeType: caseToDelete.codeType || '',
+        };
+        const qs = Object.keys(params).map(k => encodeURIComponent(k) + '=' + encodeURIComponent(params[k])).join('&');
+        const img = new Image();
+        img.src = url + '?' + qs;
+        console.log('Delete sync sent:', img.src);
+      }
+    }
   }
 
   // ── Users ──
