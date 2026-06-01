@@ -15,11 +15,17 @@ const TW_HOLIDAYS = new Set([
   '2026-02-27','2026-04-03','2026-04-06','2026-05-01','2026-06-19','2026-09-25','2026-10-09','2026-10-10',
 ]);
 
+function toLocalDateStr(date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
 function isHoliday(date) {
   const dow = date.getDay();
   if (dow === 0 || dow === 6) return true;
-  const key = date.toISOString().slice(0, 10);
-  return TW_HOLIDAYS.has(key);
+  return TW_HOLIDAYS.has(toLocalDateStr(date));
 }
 
 // Count working days from d1 to d2 (inclusive), excluding weekends and holidays.
