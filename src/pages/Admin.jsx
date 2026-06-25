@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useApp } from '../AppContext';
 import { today, daysBetween, getMonth, getManagerName, REGIONS, ROTATING_CODES, CODE_TYPES, genId } from '../utils/helpers';
 import { Card, PageHeader, Tab, FormField, Input, Select, BtnPrimary, BtnSecondary, BtnSmall, Alert, Badge, C } from '../components/UI';
@@ -579,8 +579,17 @@ function SheetsTab() {
   const [url, setUrl] = useState(sheetsConfig.scriptUrl || '');
   const [msg, setMsg] = useState(null);
 
+  // Firebase 設定是非同步載入的，掛載當下可能還是空值；資料到位後同步帶入畫面，
+  // 避免使用者在載入完成前誤按「儲存設定」把已設定好的網址清空。
+  useEffect(() => {
+    if (sheetsConfig.scriptUrl) setUrl(sheetsConfig.scriptUrl);
+  }, [sheetsConfig.scriptUrl]);
+
   async function save() {
-    await saveSheetsConfig({ scriptUrl: url });
+    if (!url.trim() && sheetsConfig.scriptUrl) {
+      if (!window.confirm('網址欄位是空的，儲存後會清空現有的 Google Sheets 同步設定，確定要繼續嗎？')) return;
+    }
+    await saveSheetsConfig({ scriptUrl: url.trim() });
     setMsg({ type: 'success', text: '✓ 設定已儲存' });
   }
   async function test() {
