@@ -385,6 +385,7 @@ function ExportTab() {
       進場日: c.entryDate||'',
       逾期進場天數: c.entryDate&&daysBetween(c.referralDate,c.entryDate)>5 ? daysBetween(c.referralDate,c.entryDate)-5 : '',
       逾期因素: c.overdueType||'', 逾期原因: c.overdueReason||'',
+      案件ID: c.id||'',
     }));
     dlCSV(rows, '全部派案紀錄_'+t+'.csv');
   }

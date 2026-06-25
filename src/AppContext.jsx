@@ -18,6 +18,31 @@ export function AppProvider({ children }) {
   const [sheetsConfig, setSheetsConfig] = useState({ scriptUrl: '' });
   const [fbStatus, setFbStatus] = useState('connecting');
   const [ready, setReady] = useState(false);
+  const [sheetsSyncError, setSheetsSyncError] = useState(null);
+
+  // 改用 fetch + mode:'no-cors' 取代原本的 Image() ping：
+  // GET 請求仍會送達 Apps Script（不受 CORS 影響），但連線層級的失敗
+  // （網址錯誤、部署被刪除、沒有網路等）現在可以被 catch 到並回報給使用者，
+  // 而不是像 Image() 一樣完全無法判斷成功與否。
+  async function pingSheets(url, qs) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8000);
+    try {
+      await fetch(`${url}?${qs}`, { mode: 'no-cors', signal: controller.signal });
+      setSheetsSyncError(null);
+    } catch (e) {
+      setSheetsSyncError({
+        message: e.name === 'AbortError'
+          ? 'Google Sheets 同步逾時，請檢查網路連線或 Apps Script 網址是否仍有效'
+          : `Google Sheets 同步失敗：${e.message}`,
+        time: new Date().toLocaleString('zh-TW'),
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  function clearSheetsSyncError() { setSheetsSyncError(null); }
 
   useEffect(() => {
     loadFromFirebase();
@@ -102,8 +127,7 @@ export function AppProvider({ children }) {
         overdueReason: newCase.overdueReason || ''
       };
       const qs = Object.keys(params).map(k => encodeURIComponent(k) + '=' + encodeURIComponent(params[k])).join('&');
-      const img = new Image();
-      img.src = url + '?' + qs;
+      pingSheets(url, qs);
     }
     return newCase;
   }
@@ -131,8 +155,7 @@ export function AppProvider({ children }) {
           overdueReason: caseData.overdueReason || ''
         };
         const qs = Object.keys(params).map(k => encodeURIComponent(k) + '=' + encodeURIComponent(params[k])).join('&');
-        const img = new Image();
-        img.src = url + '?' + qs;
+        pingSheets(url, qs);
       }
     }
   }
@@ -153,9 +176,7 @@ export function AppProvider({ children }) {
           codeType: caseToDelete.codeType || '',
         };
         const qs = Object.keys(params).map(k => encodeURIComponent(k) + '=' + encodeURIComponent(params[k])).join('&');
-        const img = new Image();
-        img.src = url + '?' + qs;
-        console.log('Delete sync sent:', img.src);
+        pingSheets(url, qs);
       }
     }
   }
@@ -214,8 +235,7 @@ export function AppProvider({ children }) {
         codeType: caseData.codeType || '',
       };
       const qs = Object.keys(params).map(k => `${encodeURIComponent(k)}=${encodeURIComponent(params[k])}`).join('&');
-      const img = new Image();
-      img.src = `${url}?${qs}`;
+      pingSheets(url, qs);
       return;
     }
 
@@ -233,8 +253,7 @@ export function AppProvider({ children }) {
       overdueReason: caseData.overdueReason || ''
     };
     const qs = Object.keys(params).map(k => `${encodeURIComponent(k)}=${encodeURIComponent(params[k])}`).join('&');
-    const img = new Image();
-    img.src = `${url}?${qs}`;
+    pingSheets(url, qs);
   }
 
   // ── Export ──
@@ -254,6 +273,7 @@ export function AppProvider({ children }) {
 
   const value = {
     currentUser, users, units, cases, rotationIndex, sheetsConfig, fbStatus, ready,
+    sheetsSyncError, clearSheetsSyncError,
     login, logout, addCase, updateCase, deleteCase,
     saveUsers, saveUnits, saveSheetsConfig, syncToSheets, exportCSV,
     getCurrentRotUnit, advanceRotation, setRotIndex,

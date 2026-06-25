@@ -36,8 +36,17 @@ function OverdueModal({ cases, onClose, setPage }) {
   );
 }
 
+function SyncErrorBanner({ error, onClose }) {
+  return (
+    <div style={{ position: 'fixed', top: 0, left: 200, right: 0, zIndex: 1200, background: C.alert, color: '#fff', padding: '10px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 13 }}>
+      <span>⚠️ {error.message}（{error.time}）</span>
+      <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', fontSize: 16, padding: '0 4px' }} title="關閉">✕</button>
+    </div>
+  );
+}
+
 function AppLayout() {
-  const { currentUser, cases } = useApp();
+  const { currentUser, cases, sheetsSyncError, clearSheetsSyncError } = useApp();
   const [page, setPage] = useState('dashboard');
   const [showOverdue, setShowOverdue] = useState(false);
   const t = today();
@@ -71,6 +80,7 @@ function AppLayout() {
         @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
       `}</style>
       <Sidebar page={page} setPage={setPage} />
+      {sheetsSyncError && <SyncErrorBanner error={sheetsSyncError} onClose={clearSheetsSyncError} />}
       <main style={{ flex: 1, marginLeft: 200, padding: '32px', overflowY: 'auto', maxHeight: '100vh' }}>
         {page === 'dashboard' && <Dashboard setPage={setPage} />}
         {page === 'newCase' && <NewCase setPage={setPage} />}
