@@ -5,6 +5,7 @@ import Dashboard from './pages/Dashboard';
 import NewCase from './pages/NewCase';
 import CasesList from './pages/CasesList';
 import Entry from './pages/Entry';
+import RotationOrder from './pages/RotationOrder';
 import Admin from './pages/Admin';
 import Sidebar from './components/Sidebar';
 import { today, daysBetween, NO_ENTRY_CODES } from './utils/helpers';
@@ -75,6 +76,7 @@ function AppLayout() {
         {page === 'newCase' && <NewCase setPage={setPage} />}
         {page === 'cases' && <CasesList />}
         {page === 'entry' && <Entry />}
+        {page === 'rotationOrder' && <RotationOrder />}
         {page === 'admin' && isAdmin && <Admin />}
       </main>
       {showOverdue && overdueList.length > 0 && (

@@ -182,10 +182,19 @@ function RotatingTab() {
     const u = { ...units, rotating: { ...units.rotating, [region]: { ...units.rotating[region], [code]: list.filter((_, i) => i !== idx) } } };
     await saveUnits(u);
   }
+  async function move(idx, dir) {
+    const target = idx + dir;
+    if (target < 0 || target >= list.length) return;
+    const next = [...list];
+    [next[idx], next[target]] = [next[target], next[idx]];
+    const u = { ...units, rotating: { ...units.rotating, [region]: { ...units.rotating[region], [code]: next } } };
+    await saveUnits(u);
+  }
 
   return (
     <Card>
       <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 16 }}>輪派單位設定（各區 BA / DA01）</h3>
+      <p style={{ color: C.muted, fontSize: 13, marginBottom: 16 }}>用 ▲▼ 調整順序，順序會直接影響輪派進度（一般使用者可在「輪派順序」頁面查看，但僅管理員可調整）</p>
       <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
         {REGIONS.map(r => <Tab key={r} id={r} label={`${r}區`} active={region === r} onClick={setRegion} />)}
       </div>
@@ -198,6 +207,8 @@ function RotatingTab() {
             <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 14px', background: C.bg, borderRadius: 10, marginBottom: 6, border: `1px solid ${C.border}` }}>
               <span style={{ color: C.muted, fontSize: 12, width: 28, textAlign: 'center' }}>{i + 1}</span>
               <span style={{ flex: 1, fontSize: 13 }}>{u}</span>
+              <button onClick={() => move(i, -1)} disabled={i === 0} style={{ background: 'none', border: 'none', color: i === 0 ? C.border : C.muted, cursor: i === 0 ? 'default' : 'pointer', fontSize: 14, padding: 4 }}>▲</button>
+              <button onClick={() => move(i, 1)} disabled={i === list.length - 1} style={{ background: 'none', border: 'none', color: i === list.length - 1 ? C.border : C.muted, cursor: i === list.length - 1 ? 'default' : 'pointer', fontSize: 14, padding: 4 }}>▼</button>
               <button onClick={() => remove(i)} style={{ background: 'none', border: 'none', color: C.alert, cursor: 'pointer', fontSize: 14, padding: 4 }}>✕</button>
             </div>
           ))}
@@ -603,22 +614,42 @@ function SheetsTab() {
 
   var idCol = headers.length - 1;
 
+  function buildRow(){
+    if(code === 'BA') return [p.region,p.referralDate,p.month,p.clientName,p.manager,p.codeType,p.unit,p.caseType,p.isRotating,p.referralReason,p.status,p.rejectReason,p.entryDate,p.odDays,p.overdueType,p.overdueReason,p.caseId];
+    if(code === 'DA01') return [p.region,p.referralDate,p.month,p.clientName,p.unit,p.manager,p.isRotating,p.caseId];
+    return [p.region,p.referralDate,p.month,p.clientName,p.manager,p.codeType,p.unit,p.status,p.rejectReason,p.entryDate,p.odDays,p.overdueType,p.overdueReason,p.caseId];
+  }
+
+  // 編輯時若碼別被改變，案件可能要移到另一個分頁，先從其他分頁移除舊資料
+  if(p.action === 'add' || p.action === 'update'){
+    var allTabNames = ['BA碼派案紀錄','交通車派案紀錄','非輪派單位照會紀錄'];
+    allTabNames.forEach(function(otherName){
+      if(otherName === tabName) return;
+      var otherTab = sheet.getSheetByName(otherName);
+      if(!otherTab) return;
+      var otherRows = otherTab.getDataRange().getValues();
+      if(otherRows.length < 2) return;
+      var otherIdCol = otherRows[0].length - 1;
+      for(var j = otherRows.length - 1; j >= 1; j--){
+        if(otherRows[j][otherIdCol] === p.caseId) otherTab.deleteRow(j + 1);
+      }
+    });
+  }
+
   if(p.action === 'add'){
-    var row;
-    if(code === 'BA') row = [p.region,p.referralDate,p.month,p.clientName,p.manager,p.codeType,p.unit,p.caseType,p.isRotating,p.referralReason,p.status,p.rejectReason,p.entryDate,p.odDays,p.overdueType,p.overdueReason,p.caseId];
-    else if(code === 'DA01') row = [p.region,p.referralDate,p.month,p.clientName,p.unit,p.manager,p.isRotating,p.caseId];
-    else row = [p.region,p.referralDate,p.month,p.clientName,p.manager,p.codeType,p.unit,p.status,p.rejectReason,p.entryDate,p.odDays,p.overdueType,p.overdueReason,p.caseId];
-    tab.appendRow(row);
+    tab.appendRow(buildRow());
 
   } else if(p.action === 'update'){
     var rows = tab.getDataRange().getValues();
+    var found = false;
     for(var i = 1; i < rows.length; i++){
       if(rows[i][idCol] === p.caseId){
-        if(code === 'BA'){ tab.getRange(i+1,13).setValue(p.entryDate); tab.getRange(i+1,14).setValue(p.odDays); tab.getRange(i+1,15).setValue(p.overdueType); tab.getRange(i+1,16).setValue(p.overdueReason); }
-        else if(code !== 'DA01'){ tab.getRange(i+1,10).setValue(p.entryDate); tab.getRange(i+1,11).setValue(p.odDays); tab.getRange(i+1,12).setValue(p.overdueType); tab.getRange(i+1,13).setValue(p.overdueReason); }
+        tab.getRange(i+1, 1, 1, headers.length).setValues([buildRow()]);
+        found = true;
         break;
       }
     }
+    if(!found) tab.appendRow(buildRow());
 
   } else if(p.action === 'delete'){
     // 找到對應列並刪除整列
@@ -637,13 +668,14 @@ function SheetsTab() {
   return (
     <Card style={{ maxWidth: 620 }}>
       <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>📊 Google Sheets 即時同步</h3>
-      <p style={{ color: C.muted, fontSize: 13, marginBottom: 20 }}>每次新增派案或填寫進場日，自動寫入 Google Sheets</p>
+      <p style={{ color: C.muted, fontSize: 13, marginBottom: 20 }}>每次新增、編輯或刪除派案紀錄，自動同步寫入 Google Sheets（編輯會整列覆寫，含碼別變更時自動移動分頁）</p>
       <div style={{ background: C.accentL, borderRadius: 10, padding: '12px 16px', marginBottom: 20, fontSize: 12, color: C.accent }}>
         <strong>設定步驟：</strong><br />
         1. Google Sheets → 擴充功能 → Apps Script<br />
         2. 貼上下方程式碼 → Deploy → New deployment → Web app<br />
         3. Execute as: Me / Who has access: Anyone → Deploy<br />
-        4. 複製網址貼到下方
+        4. 複製網址貼到下方<br />
+        <strong>※ 已更新編輯同步邏輯，若先前已部署過，請重新 Deploy 一個新版本（New deployment）才會套用。</strong>
       </div>
       <div style={{ marginBottom: 16 }}>
         <label style={{ display: 'block', fontSize: 12, color: C.muted, marginBottom: 6, fontWeight: 500 }}>Apps Script 程式碼（點下方全選複製）</label>

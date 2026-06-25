@@ -6,6 +6,7 @@ const NAV_ITEMS = [
   { id: 'newCase', icon: '➕', label: '新增派案' },
   { id: 'cases', icon: '📋', label: '派案紀錄' },
   { id: 'entry', icon: '📅', label: '進場時效' },
+  { id: 'rotationOrder', icon: '🔄', label: '輪派順序' },
 ];
 
 export default function Sidebar({ page, setPage }) {
