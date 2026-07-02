@@ -10,7 +10,7 @@ const NAV_ITEMS = [
 ];
 
 export default function Sidebar({ page, setPage }) {
-  const { currentUser, logout, fbStatus } = useApp();
+  const { currentUser, logout, fbStatus, pendingSyncCount } = useApp();
   const isAdmin = currentUser?.role === 'admin';
   const items = isAdmin ? [...NAV_ITEMS, { id: 'admin', icon: '⚙️', label: '管理後台' }] : NAV_ITEMS;
 
@@ -53,6 +53,14 @@ export default function Sidebar({ page, setPage }) {
             {fbStatus === 'connected' ? 'Firebase 已連線' : fbStatus === 'offline' ? '離線模式' : '連線中…'}
           </span>
         </div>
+        {pendingSyncCount > 0 && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', marginBottom: 4 }}>
+            <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#c4a55a', flexShrink: 0 }} />
+            <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.55)' }}>
+              {pendingSyncCount} 筆待同步至 Sheets
+            </span>
+          </div>
+        )}
         <button
           onClick={logout}
           style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '10px 12px', borderRadius: 10, border: 'none', cursor: 'pointer', background: 'transparent', color: 'rgba(255,255,255,0.45)', fontSize: 13, fontFamily: 'inherit' }}

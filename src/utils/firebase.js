@@ -50,6 +50,16 @@ export async function fbRemove(path) {
   }
 }
 
+// 輕量連線探測，跟資料讀取脫鉤，避免把「沒有資料」誤判為「離線」
+export async function fbPing() {
+  try {
+    const r = await fetch(`${FB_URL}/.json?shallow=true`);
+    return r.ok;
+  } catch (e) {
+    return false;
+  }
+}
+
 export function objToArr(obj) {
   if (!obj || typeof obj !== 'object') return [];
   return Object.values(obj);

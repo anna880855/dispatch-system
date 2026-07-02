@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect } from 'react';
-import { fbGet, fbSet, fbUpdate, fbRemove, objToArr, arrToObj } from './utils/firebase';
+import { fbGet, fbSet, fbUpdate, fbRemove, fbPing, objToArr, arrToObj } from './utils/firebase';
 import { genId, today, daysBetween, getMonth, getManagerName } from './utils/helpers';
 import { DEFAULT_ROTATING, DEFAULT_NON_ROTATING, DEFAULT_ROTATION_INDEX } from './data/units';
 
@@ -8,6 +8,47 @@ const AppContext = createContext(null);
 const DEFAULT_USERS = [
   { id: 'u1', username: 'admin', password: 'admin123', name: '系統管理員', role: 'admin', region: null },
 ];
+
+// ── Google Sheets 同步 payload / 佇列 ──
+const SYNC_QUEUE_KEY = 'pendingSheetSync';
+
+function buildSyncParams(caseData, users) {
+  const entryDays = caseData.entryDate ? daysBetween(caseData.referralDate, caseData.entryDate) : '';
+  const odDays = entryDays && entryDays > 5 ? entryDays - 5 : '';
+  return {
+    caseId: caseData.id || '',
+    region: caseData.region || '', referralDate: caseData.referralDate || '',
+    month: getMonth(caseData.referralDate), clientName: caseData.clientName || '',
+    manager: getManagerName(users, caseData.managerId), codeType: caseData.codeType || '',
+    unit: caseData.unit || '', caseType: caseData.caseType || '',
+    isRotating: caseData.isRotating ? '是' : '否', referralReason: caseData.referralReason || '',
+    status: caseData.status || '', rejectReason: caseData.rejectReason || '',
+    entryDate: caseData.entryDate || '', odDays, overdueType: caseData.overdueType || '',
+    overdueReason: caseData.overdueReason || ''
+  };
+}
+
+function loadSyncQueue() {
+  try { return JSON.parse(localStorage.getItem(SYNC_QUEUE_KEY) || '[]'); }
+  catch (e) { return []; }
+}
+function saveSyncQueue(q) {
+  try { localStorage.setItem(SYNC_QUEUE_KEY, JSON.stringify(q)); }
+  catch (e) { /* storage 不可用時放棄持久化，佇列仍留在記憶體重試 */ }
+}
+
+// 用 fetch（no-cors POST）取代 Image() 打點：
+// - body 放 JSON，不受 URL 長度限制
+// - text/plain content-type 避免觸發 CORS preflight（Apps Script 不處理 OPTIONS）
+// - 真正的網路層失敗（離線、DNS 失敗）會 reject，讓呼叫端能夠重試
+async function postToSheets(url, body) {
+  await fetch(url, {
+    method: 'POST',
+    mode: 'no-cors',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify(body),
+  });
+}
 
 export function AppProvider({ children }) {
   const [currentUser, setCurrentUser] = useState(null);
@@ -18,55 +59,107 @@ export function AppProvider({ children }) {
   const [sheetsConfig, setSheetsConfig] = useState({ scriptUrl: '' });
   const [fbStatus, setFbStatus] = useState('connecting');
   const [ready, setReady] = useState(false);
+  const [pendingSyncCount, setPendingSyncCount] = useState(() => loadSyncQueue().length);
 
   useEffect(() => {
     loadFromFirebase();
+    flushSyncQueue();
+    window.addEventListener('online', flushSyncQueue);
     const poller = setInterval(pollCases, 15000);
-    return () => clearInterval(poller);
+    return () => {
+      clearInterval(poller);
+      window.removeEventListener('online', flushSyncQueue);
+    };
   }, []);
 
   async function loadFromFirebase() {
-    try {
-      const timeout = (p, ms = 8000) => Promise.race([p, new Promise((_, r) => setTimeout(() => r(new Error('timeout')), ms))]);
-      const [fbUsers, fbUnits, fbCases, fbRot, fbSheets] = await Promise.all([
-        timeout(fbGet('users')),
-        timeout(fbGet('units')),
-        timeout(fbGet('cases')),
-        timeout(fbGet('rotationIndex')),
-        timeout(fbGet('sheetsConfig')),
-      ]);
+    const timeout = (p, ms = 8000) => Promise.race([p, new Promise((_, r) => setTimeout(() => r(new Error('timeout')), ms))]);
+    const [usersRes, unitsRes, casesRes, rotRes, sheetsRes] = await Promise.allSettled([
+      timeout(fbGet('users')),
+      timeout(fbGet('units')),
+      timeout(fbGet('cases')),
+      timeout(fbGet('rotationIndex')),
+      timeout(fbGet('sheetsConfig')),
+    ]);
 
-      if (fbUsers && Object.keys(fbUsers).length > 0) {
-        const loaded = objToArr(fbUsers);
+    if (usersRes.status === 'fulfilled') {
+      if (usersRes.value && Object.keys(usersRes.value).length > 0) {
+        const loaded = objToArr(usersRes.value);
         const hasAdmin = loaded.some(u => u.id === 'u1');
         setUsers(hasAdmin ? loaded : [...DEFAULT_USERS, ...loaded.filter(u => u.id !== 'u1')]);
       } else {
         await fbSet('users', arrToObj(DEFAULT_USERS));
       }
-
-      if (fbUnits) setUnits(fbUnits);
-      else await fbSet('units', { rotating: DEFAULT_ROTATING, nonRotating: DEFAULT_NON_ROTATING });
-
-      if (fbCases) setCases(objToArr(fbCases));
-
-      if (fbRot) setRotationIndex(fbRot);
-      else { setRotationIndex({ ...DEFAULT_ROTATION_INDEX }); await fbSet('rotationIndex', DEFAULT_ROTATION_INDEX); }
-
-      if (fbSheets) setSheetsConfig(fbSheets);
-
-      setFbStatus('connected');
-    } catch (e) {
-      console.warn('Firebase 離線:', e.message);
-      setFbStatus('offline');
     }
+
+    if (unitsRes.status === 'fulfilled') {
+      if (unitsRes.value) setUnits(unitsRes.value);
+      else await fbSet('units', { rotating: DEFAULT_ROTATING, nonRotating: DEFAULT_NON_ROTATING });
+    }
+
+    if (casesRes.status === 'fulfilled' && casesRes.value) setCases(objToArr(casesRes.value));
+
+    if (rotRes.status === 'fulfilled') {
+      if (rotRes.value) setRotationIndex(rotRes.value);
+      else { setRotationIndex({ ...DEFAULT_ROTATION_INDEX }); await fbSet('rotationIndex', DEFAULT_ROTATION_INDEX); }
+    }
+
+    if (sheetsRes.status === 'fulfilled' && sheetsRes.value) setSheetsConfig(sheetsRes.value);
+
+    // 只要有任一請求成功就不算離線；避免單一逾時就把整體判定拖垮
+    const anySucceeded = [usersRes, unitsRes, casesRes, rotRes, sheetsRes].some(r => r.status === 'fulfilled');
+    if (!anySucceeded) console.warn('Firebase 離線: 所有初始讀取皆逾時或失敗');
+    setFbStatus(anySucceeded ? 'connected' : 'offline');
     setReady(true);
   }
 
   async function pollCases() {
-    try {
+    const ok = await fbPing();
+    setFbStatus(ok ? 'connected' : 'offline');
+    if (ok) {
       const fbCases = await fbGet('cases');
       if (fbCases) setCases(objToArr(fbCases));
-    } catch (e) { /* silent */ }
+    }
+    flushSyncQueue();
+  }
+
+  // ── Google Sheets 同步佇列 ──
+  async function syncOrQueue(url, body) {
+    try {
+      await postToSheets(url, body);
+    } catch (e) {
+      const q = loadSyncQueue();
+      q.push({ url, body, ts: Date.now() });
+      saveSyncQueue(q);
+      setPendingSyncCount(q.length);
+    }
+  }
+
+  async function flushSyncQueue() {
+    const q = loadSyncQueue();
+    if (!q.length) return;
+    const remaining = [];
+    for (const item of q) {
+      try { await postToSheets(item.url, item.body); }
+      catch (e) { remaining.push(item); }
+    }
+    saveSyncQueue(remaining);
+    setPendingSyncCount(remaining.length);
+  }
+
+  // 完整同步：抓取 Firebase 目前全部案件，整批送給 Apps Script 完整覆寫三個分頁，
+  // 可一次修正先前因斷線、被攔截等原因漏同步或不一致的資料
+  async function fullSyncToSheets() {
+    const freshConfig = await fbGet('sheetsConfig');
+    const url = (freshConfig && freshConfig.scriptUrl) || sheetsConfig?.scriptUrl;
+    if (!url) throw new Error('尚未設定 Apps Script 網址');
+    const freshCasesRaw = await fbGet('cases');
+    const list = freshCasesRaw ? objToArr(freshCasesRaw) : cases;
+    const freshUsersRaw = await fbGet('users');
+    const usersForNames = freshUsersRaw ? objToArr(freshUsersRaw) : users;
+    const items = list.map(c => buildSyncParams(c, usersForNames));
+    await postToSheets(url, { action: 'fullSync', items });
+    return items.length;
   }
 
   // ── Auth ──
@@ -88,22 +181,7 @@ export function AppProvider({ children }) {
     const freshConfig = await fbGet('sheetsConfig');
     const url = (freshConfig && freshConfig.scriptUrl) || sheetsConfig?.scriptUrl;
     if (url) {
-      const entryDays = newCase.entryDate ? daysBetween(newCase.referralDate, newCase.entryDate) : '';
-      const odDays = entryDays && entryDays > 5 ? entryDays - 5 : '';
-      const params = {
-        action: 'add', caseId: newCase.id || '',
-        region: newCase.region || '', referralDate: newCase.referralDate || '',
-        month: getMonth(newCase.referralDate), clientName: newCase.clientName || '',
-        manager: getManagerName(users, newCase.managerId), codeType: newCase.codeType || '',
-        unit: newCase.unit || '', caseType: newCase.caseType || '',
-        isRotating: newCase.isRotating ? '是' : '否', referralReason: newCase.referralReason || '',
-        status: newCase.status || '', rejectReason: newCase.rejectReason || '',
-        entryDate: newCase.entryDate || '', odDays, overdueType: newCase.overdueType || '',
-        overdueReason: newCase.overdueReason || ''
-      };
-      const qs = Object.keys(params).map(k => encodeURIComponent(k) + '=' + encodeURIComponent(params[k])).join('&');
-      const img = new Image();
-      img.src = url + '?' + qs;
+      syncOrQueue(url, { action: 'add', ...buildSyncParams(newCase, users) });
     }
     return newCase;
   }
@@ -117,22 +195,7 @@ export function AppProvider({ children }) {
       const url = (freshConfig && freshConfig.scriptUrl) || sheetsConfig?.scriptUrl;
       if (url) {
         const caseData = { ...updated, ...updates };
-        const entryDays = caseData.entryDate ? daysBetween(caseData.referralDate, caseData.entryDate) : '';
-        const odDays = entryDays && entryDays > 5 ? entryDays - 5 : '';
-        const params = {
-          action: 'update', caseId: caseData.id || '',
-          region: caseData.region || '', referralDate: caseData.referralDate || '',
-          month: getMonth(caseData.referralDate), clientName: caseData.clientName || '',
-          manager: getManagerName(users, caseData.managerId), codeType: caseData.codeType || '',
-          unit: caseData.unit || '', caseType: caseData.caseType || '',
-          isRotating: caseData.isRotating ? '是' : '否', referralReason: caseData.referralReason || '',
-          status: caseData.status || '', rejectReason: caseData.rejectReason || '',
-          entryDate: caseData.entryDate || '', odDays, overdueType: caseData.overdueType || '',
-          overdueReason: caseData.overdueReason || ''
-        };
-        const qs = Object.keys(params).map(k => encodeURIComponent(k) + '=' + encodeURIComponent(params[k])).join('&');
-        const img = new Image();
-        img.src = url + '?' + qs;
+        syncOrQueue(url, { action: 'update', ...buildSyncParams(caseData, users) });
       }
     }
   }
@@ -147,15 +210,7 @@ export function AppProvider({ children }) {
       const freshConfig = await fbGet('sheetsConfig');
       const url = freshConfig?.scriptUrl || sheetsConfig?.scriptUrl;
       if (url && caseToDelete.id) {
-        const params = {
-          action: 'delete',
-          caseId: caseToDelete.id,
-          codeType: caseToDelete.codeType || '',
-        };
-        const qs = Object.keys(params).map(k => encodeURIComponent(k) + '=' + encodeURIComponent(params[k])).join('&');
-        const img = new Image();
-        img.src = url + '?' + qs;
-        console.log('Delete sync sent:', img.src);
+        syncOrQueue(url, { action: 'delete', caseId: caseToDelete.id, codeType: caseToDelete.codeType || '' });
       }
     }
   }
@@ -207,34 +262,11 @@ export function AppProvider({ children }) {
     if (!url) return;
 
     if (action === 'delete') {
-      // 刪除只需要 caseId 和 codeType
-      const params = {
-        action: 'delete',
-        caseId: caseData.id || '',
-        codeType: caseData.codeType || '',
-      };
-      const qs = Object.keys(params).map(k => `${encodeURIComponent(k)}=${encodeURIComponent(params[k])}`).join('&');
-      const img = new Image();
-      img.src = `${url}?${qs}`;
+      syncOrQueue(url, { action: 'delete', caseId: caseData.id || '', codeType: caseData.codeType || '' });
       return;
     }
 
-    const entryDays = caseData.entryDate ? daysBetween(caseData.referralDate, caseData.entryDate) : '';
-    const odDays = entryDays && entryDays > 5 ? entryDays - 5 : '';
-    const params = {
-      action, caseId: caseData.id || '',
-      region: caseData.region || '', referralDate: caseData.referralDate || '',
-      month: getMonth(caseData.referralDate), clientName: caseData.clientName || '',
-      manager: getManagerName(users, caseData.managerId), codeType: caseData.codeType || '',
-      unit: caseData.unit || '', caseType: caseData.caseType || '',
-      isRotating: caseData.isRotating ? '是' : '否', referralReason: caseData.referralReason || '',
-      status: caseData.status || '', rejectReason: caseData.rejectReason || '',
-      entryDate: caseData.entryDate || '', odDays, overdueType: caseData.overdueType || '',
-      overdueReason: caseData.overdueReason || ''
-    };
-    const qs = Object.keys(params).map(k => `${encodeURIComponent(k)}=${encodeURIComponent(params[k])}`).join('&');
-    const img = new Image();
-    img.src = `${url}?${qs}`;
+    syncOrQueue(url, { action, ...buildSyncParams(caseData, users) });
   }
 
   // ── Export ──
@@ -253,9 +285,9 @@ export function AppProvider({ children }) {
   }
 
   const value = {
-    currentUser, users, units, cases, rotationIndex, sheetsConfig, fbStatus, ready,
+    currentUser, users, units, cases, rotationIndex, sheetsConfig, fbStatus, ready, pendingSyncCount,
     login, logout, addCase, updateCase, deleteCase,
-    saveUsers, saveUnits, saveSheetsConfig, syncToSheets, exportCSV,
+    saveUsers, saveUnits, saveSheetsConfig, syncToSheets, fullSyncToSheets, exportCSV,
     getCurrentRotUnit, advanceRotation, setRotIndex,
   };
 
