@@ -575,9 +575,10 @@ function ImportTab() {
 }
 
 function SheetsTab() {
-  const { sheetsConfig, saveSheetsConfig, syncToSheets } = useApp();
+  const { sheetsConfig, saveSheetsConfig, syncToSheets, fullSyncToSheets, cases } = useApp();
   const [url, setUrl] = useState(sheetsConfig.scriptUrl || '');
   const [msg, setMsg] = useState(null);
+  const [syncing, setSyncing] = useState(false);
 
   async function save() {
     await saveSheetsConfig({ scriptUrl: url });
@@ -589,78 +590,138 @@ function SheetsTab() {
     syncToSheets({ id: 'test-' + Date.now(), region: '測試區', referralDate: '2026-01-01', managerId: 'u1', clientName: '測試個案', codeType: 'BA', isRotating: true, unit: '測試單位', caseType: '新案', status: '承接', rejectReason: '', referralReason: '', entryDate: '' }, 'add');
     setTimeout(() => setMsg({ type: 'success', text: '✓ 已送出！請到 Google Sheets「BA碼派案紀錄」確認是否出現「測試個案」。' }), 1500);
   }
+  async function runFullSync() {
+    if (!url) { setMsg({ type: 'error', text: '請先填寫並儲存網址' }); return; }
+    if (!window.confirm(`即將把系統目前全部 ${cases.length} 筆案件資料完整送到 Google Sheets，並覆寫「BA碼派案紀錄」「交通車派案紀錄」「非輪派單位照會紀錄」三個分頁的內容（含修正先前漏同步、不一致的資料）。確定要繼續嗎？`)) return;
+    setSyncing(true);
+    setMsg({ type: 'warn', text: '完整同步中，請稍候…' });
+    try {
+      const count = await fullSyncToSheets();
+      setMsg({ type: 'success', text: `✓ 已送出 ${count} 筆案件資料，請到 Google Sheets 確認三個分頁內容。` });
+    } catch (e) {
+      setMsg({ type: 'error', text: `✗ 完整同步失敗：${e.message}` });
+    }
+    setSyncing(false);
+  }
 
   const appsScript = `function doGet(e) {
-  var p = e.parameter;
-  var sheet = SpreadsheetApp.getActiveSpreadsheet();
-  var code = p.codeType || '';
-  var tabName;
-  if(code === 'DA01') tabName = '交通車派案紀錄';
-  else if(code === 'BA') tabName = 'BA碼派案紀錄';
-  else tabName = '非輪派單位照會紀錄';
+  return handleRequest(e.parameter);
+}
 
-  var tab = sheet.getSheetByName(tabName);
-  if(!tab) tab = sheet.insertSheet(tabName);
+function doPost(e) {
+  var p;
+  try { p = JSON.parse(e.postData.contents); } catch (err) { p = e.parameter; }
+  return handleRequest(p);
+}
 
-  var headers;
-  if(code === 'BA'){
-    headers = ['服務區域','派案日期','派案月份','個案姓名','個管人員','服務碼別','派案單位','新舊案','是否為輪派','派案原因','承接狀態','未承接原因','進場日','逾期進場天數','逾期因素','逾期原因','案件ID'];
-  } else if(code === 'DA01'){
-    headers = ['服務區域','派案日期','派車月份','個案姓名','派車單位','個管人員','是否為輪派','案件ID'];
-  } else {
-    headers = ['服務區域','派案日期','派案月份','個案姓名','個管人員','派案碼別','派案單位','承接狀態','未承接原因','進場日','逾期進場天數','逾期因素','逾期原因','案件ID'];
-  }
-  if(tab.getLastRow() === 0) tab.appendRow(headers);
+function handleRequest(p) {
+  if (p.action === 'fullSync') return fullSync(p);
+  return syncOne(p);
+}
 
+function getTabName(code) {
+  if (code === 'DA01') return '交通車派案紀錄';
+  if (code === 'BA') return 'BA碼派案紀錄';
+  return '非輪派單位照會紀錄';
+}
+
+function getTabType(code) {
+  if (code === 'DA01') return 'DA01';
+  if (code === 'BA') return 'BA';
+  return 'OTHER';
+}
+
+function getHeaders(tabType) {
+  if (tabType === 'BA') return ['服務區域','派案日期','派案月份','個案姓名','個管人員','服務碼別','派案單位','新舊案','是否為輪派','派案原因','承接狀態','未承接原因','進場日','逾期進場天數','逾期因素','逾期原因','案件ID'];
+  if (tabType === 'DA01') return ['服務區域','派案日期','派車月份','個案姓名','派車單位','個管人員','是否為輪派','案件ID'];
+  return ['服務區域','派案日期','派案月份','個案姓名','個管人員','派案碼別','派案單位','承接狀態','未承接原因','進場日','逾期進場天數','逾期因素','逾期原因','案件ID'];
+}
+
+function buildRow(tabType, p) {
+  if (tabType === 'BA') return [p.region,p.referralDate,p.month,p.clientName,p.manager,p.codeType,p.unit,p.caseType,p.isRotating,p.referralReason,p.status,p.rejectReason,p.entryDate,p.odDays,p.overdueType,p.overdueReason,p.caseId];
+  if (tabType === 'DA01') return [p.region,p.referralDate,p.month,p.clientName,p.unit,p.manager,p.isRotating,p.caseId];
+  return [p.region,p.referralDate,p.month,p.clientName,p.manager,p.codeType,p.unit,p.status,p.rejectReason,p.entryDate,p.odDays,p.overdueType,p.overdueReason,p.caseId];
+}
+
+// 單筆新增／編輯／刪除（即時同步）
+function syncOne(p) {
+  var tabName = getTabName(p.codeType || '');
+  var tabType = getTabType(p.codeType || '');
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var tab = ss.getSheetByName(tabName);
+  if (!tab) tab = ss.insertSheet(tabName);
+
+  var headers = getHeaders(tabType);
+  if (tab.getLastRow() === 0) tab.appendRow(headers);
   var idCol = headers.length - 1;
 
-  function buildRow(){
-    if(code === 'BA') return [p.region,p.referralDate,p.month,p.clientName,p.manager,p.codeType,p.unit,p.caseType,p.isRotating,p.referralReason,p.status,p.rejectReason,p.entryDate,p.odDays,p.overdueType,p.overdueReason,p.caseId];
-    if(code === 'DA01') return [p.region,p.referralDate,p.month,p.clientName,p.unit,p.manager,p.isRotating,p.caseId];
-    return [p.region,p.referralDate,p.month,p.clientName,p.manager,p.codeType,p.unit,p.status,p.rejectReason,p.entryDate,p.odDays,p.overdueType,p.overdueReason,p.caseId];
-  }
-
   // 編輯時若碼別被改變，案件可能要移到另一個分頁，先從其他分頁移除舊資料
-  if(p.action === 'add' || p.action === 'update'){
-    var allTabNames = ['BA碼派案紀錄','交通車派案紀錄','非輪派單位照會紀錄'];
-    allTabNames.forEach(function(otherName){
-      if(otherName === tabName) return;
-      var otherTab = sheet.getSheetByName(otherName);
-      if(!otherTab) return;
+  if (p.action === 'add' || p.action === 'update') {
+    ['BA碼派案紀錄','交通車派案紀錄','非輪派單位照會紀錄'].forEach(function (otherName) {
+      if (otherName === tabName) return;
+      var otherTab = ss.getSheetByName(otherName);
+      if (!otherTab) return;
       var otherRows = otherTab.getDataRange().getValues();
-      if(otherRows.length < 2) return;
+      if (otherRows.length < 2) return;
       var otherIdCol = otherRows[0].length - 1;
-      for(var j = otherRows.length - 1; j >= 1; j--){
-        if(otherRows[j][otherIdCol] === p.caseId) otherTab.deleteRow(j + 1);
+      for (var j = otherRows.length - 1; j >= 1; j--) {
+        if (otherRows[j][otherIdCol] === p.caseId) otherTab.deleteRow(j + 1);
       }
     });
   }
 
-  if(p.action === 'add'){
-    tab.appendRow(buildRow());
+  if (p.action === 'add') {
+    tab.appendRow(buildRow(tabType, p));
 
-  } else if(p.action === 'update'){
+  } else if (p.action === 'update') {
     var rows = tab.getDataRange().getValues();
     var found = false;
-    for(var i = 1; i < rows.length; i++){
-      if(rows[i][idCol] === p.caseId){
-        tab.getRange(i+1, 1, 1, headers.length).setValues([buildRow()]);
+    for (var i = 1; i < rows.length; i++) {
+      if (rows[i][idCol] === p.caseId) {
+        tab.getRange(i + 1, 1, 1, headers.length).setValues([buildRow(tabType, p)]);
         found = true;
         break;
       }
     }
-    if(!found) tab.appendRow(buildRow());
+    if (!found) tab.appendRow(buildRow(tabType, p));
 
-  } else if(p.action === 'delete'){
-    // 找到對應列並刪除整列
-    var rows = tab.getDataRange().getValues();
-    for(var i = rows.length - 1; i >= 1; i--){
-      if(rows[i][idCol] === p.caseId){
-        tab.deleteRow(i + 1);
+  } else if (p.action === 'delete') {
+    var delRows = tab.getDataRange().getValues();
+    for (var k = delRows.length - 1; k >= 1; k--) {
+      if (delRows[k][idCol] === p.caseId) {
+        tab.deleteRow(k + 1);
         break;
       }
     }
   }
+
+  return ContentService.createTextOutput('OK');
+}
+
+// 完整同步：以系統目前全部案件資料為準，完整覆寫三個分頁，
+// 用於修正先前因斷線、被瀏覽器攔截等原因漏同步或不一致的資料
+function fullSync(p) {
+  var items = p.items || [];
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var byTab = { 'BA碼派案紀錄': [], '交通車派案紀錄': [], '非輪派單位照會紀錄': [] };
+
+  items.forEach(function (it) {
+    byTab[getTabName(it.codeType || '')].push(it);
+  });
+
+  Object.keys(byTab).forEach(function (tabName) {
+    var tab = ss.getSheetByName(tabName);
+    if (!tab) tab = ss.insertSheet(tabName);
+    var tabType = tabName === 'BA碼派案紀錄' ? 'BA' : tabName === '交通車派案紀錄' ? 'DA01' : 'OTHER';
+    var headers = getHeaders(tabType);
+
+    var lastRow = tab.getLastRow();
+    if (lastRow > 1) tab.getRange(2, 1, lastRow - 1, tab.getLastColumn()).clearContent();
+    tab.getRange(1, 1, 1, headers.length).setValues([headers]);
+
+    var rows = byTab[tabName].map(function (it) { return buildRow(tabType, it); });
+    if (rows.length) tab.getRange(2, 1, rows.length, headers.length).setValues(rows);
+  });
 
   return ContentService.createTextOutput('OK');
 }`;
@@ -675,7 +736,7 @@ function SheetsTab() {
         2. 貼上下方程式碼 → Deploy → New deployment → Web app<br />
         3. Execute as: Me / Who has access: Anyone → Deploy<br />
         4. 複製網址貼到下方<br />
-        <strong>※ 已更新編輯同步邏輯，若先前已部署過，請重新 Deploy 一個新版本（New deployment）才會套用。</strong>
+        <strong>※ 已改用 doPost 傳輸並支援完整同步，若先前已部署過，請重新 Deploy 一個新版本（New deployment）才會套用。</strong>
       </div>
       <div style={{ marginBottom: 16 }}>
         <label style={{ display: 'block', fontSize: 12, color: C.muted, marginBottom: 6, fontWeight: 500 }}>Apps Script 程式碼（點下方全選複製）</label>
@@ -689,9 +750,16 @@ function SheetsTab() {
         <Input value={url} onChange={e => setUrl(e.target.value)} placeholder="https://script.google.com/macros/s/xxxxx/exec" />
       </FormField>
       {msg && <Alert type={msg.type}>{msg.text}</Alert>}
-      <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
+      <div style={{ display: 'flex', gap: 10, marginTop: 16, flexWrap: 'wrap' }}>
         <BtnPrimary onClick={save}>儲存設定</BtnPrimary>
         <BtnSecondary onClick={test}>🧪 測試連線</BtnSecondary>
+      </div>
+      <div style={{ marginTop: 24, paddingTop: 20, borderTop: `1px solid ${C.border}` }}>
+        <h4 style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>🔄 完整同步</h4>
+        <p style={{ color: C.muted, fontSize: 12, marginBottom: 12 }}>
+          若曾經斷線或懷疑有案件漏同步到 Google Sheets，可執行完整同步：會用系統目前的全部案件資料，完整覆寫三個分頁的內容，找回任何遺漏或不一致的資料。
+        </p>
+        <BtnSecondary onClick={runFullSync} disabled={syncing}>{syncing ? '同步中…' : `🔄 執行完整同步（共 ${cases.length} 筆）`}</BtnSecondary>
       </div>
     </Card>
   );
