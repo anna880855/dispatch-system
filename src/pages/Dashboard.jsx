@@ -11,10 +11,10 @@ export default function Dashboard({ setPage }) {
 
   const myCases = currentUser?.role === 'admin' ? cases : cases.filter(c => c.managerId === currentUser?.id);
   const trackable = myCases.filter(c => c.status !== '不承接' && !NO_ENTRY_CODES.includes(c.codeType));
-  const withoutEntry = trackable.filter(c => !c.entryDate);
+  const withoutEntry = trackable.filter(c => !c.entryDate && !c.unableToEnter);
   const overdue = withoutEntry.filter(c => daysBetween(c.referralDate, t) > 5);
   const pending = withoutEntry.filter(c => daysBetween(c.referralDate, t) <= 5);
-  const completed = trackable.filter(c => c.entryDate);
+  const completed = trackable.filter(c => c.entryDate || c.unableToEnter);
   const monthCases = myCases.filter(c => c.referralDate?.startsWith(thisMonth));
   const recent = [...myCases].sort((a, b) => b.referralDate?.localeCompare(a.referralDate)).slice(0, 10);
 

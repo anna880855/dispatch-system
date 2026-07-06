@@ -154,7 +154,7 @@ export default function CasesList() {
               <tbody>
                 {filtered.map((c, i) => {
                   const days = c.entryDate ? daysBetween(c.referralDate, c.entryDate) : daysBetween(c.referralDate, t);
-                  const od = !c.entryDate && days > 5 && c.status !== '不承接';
+                  const od = !c.entryDate && !c.unableToEnter && days > 5 && c.status !== '不承接';
                   if (editingId === c.id) {
                     return <EditForm key={c.id} c={c} onSave={handleSave} onCancel={() => setEditingId(null)} />;
                   }
@@ -168,7 +168,7 @@ export default function CasesList() {
                       <td style={{ padding: '10px 14px', maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={c.unit}>{c.unit}</td>
                       <td style={{ padding: '10px 14px' }}>{c.caseType}</td>
                       <td style={{ padding: '10px 14px' }}><span style={{ color: c.status === '承接' ? C.success : C.muted }}>{c.status}</span></td>
-                      <td style={{ padding: '10px 14px' }}>{c.entryDate || <span style={{ color: od ? C.alert : C.warning }}>未填</span>}</td>
+                      <td style={{ padding: '10px 14px' }}>{c.entryDate || (c.unableToEnter ? <span style={{ color: C.alert }}>無法進場</span> : <span style={{ color: od ? C.alert : C.warning }}>未填</span>)}</td>
                       <td style={{ padding: '10px 14px' }}><span style={{ color: od ? C.alert : c.entryDate && days > 5 ? C.warning : C.success, fontWeight: 500 }}>{days}天</span></td>
                       <td style={{ padding: '10px 14px', whiteSpace: 'nowrap' }}>
                         <button onClick={() => setEditingId(c.id)} style={{ background: 'none', border: 'none', color: C.accent, cursor: 'pointer', fontSize: 14, padding: 4 }} title="編輯">✏️</button>

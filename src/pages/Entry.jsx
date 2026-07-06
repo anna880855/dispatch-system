@@ -1,34 +1,45 @@
 import { useState } from 'react';
 import { useApp } from '../AppContext';
-import { today, daysBetween, NO_ENTRY_CODES } from '../utils/helpers';
+import { today, daysBetween, NO_ENTRY_CODES, UNABLE_ENTRY_REASONS } from '../utils/helpers';
 import { Card, PageHeader, BtnSmall, Badge, Input, Select, Alert, C } from '../components/UI';
 
 export default function Entry() {
   const { currentUser, cases, updateCase } = useApp();
   const [editing, setEditing] = useState(null);
+  const [canEnter, setCanEnter] = useState(true);
   const [entryDate, setEntryDate] = useState(today());
   const [overdueType, setOverdueType] = useState('案家因素');
   const [overdueReason, setOverdueReason] = useState('');
+  const [unableReason, setUnableReason] = useState(UNABLE_ENTRY_REASONS[0]);
   const [showDone, setShowDone] = useState(false);
   const [saveMsg, setSaveMsg] = useState(null);
   const t = today();
 
   const myCases = currentUser?.role === 'admin' ? cases : cases.filter(c => c.managerId === currentUser?.id);
-  const pending = myCases.filter(c => !c.entryDate && c.status !== '不承接' && !NO_ENTRY_CODES.includes(c.codeType)).sort((a, b) => a.referralDate?.localeCompare(b.referralDate));
-  const completed = myCases.filter(c => c.entryDate && c.status !== '不承接' && !NO_ENTRY_CODES.includes(c.codeType)).sort((a, b) => b.entryDate?.localeCompare(a.entryDate));
+  const pending = myCases.filter(c => !c.entryDate && !c.unableToEnter && c.status !== '不承接' && !NO_ENTRY_CODES.includes(c.codeType)).sort((a, b) => a.referralDate?.localeCompare(b.referralDate));
+  const completed = myCases.filter(c => (c.entryDate || c.unableToEnter) && c.status !== '不承接' && !NO_ENTRY_CODES.includes(c.codeType)).sort((a, b) => (b.entryDate || b.referralDate)?.localeCompare(a.entryDate || a.referralDate));
 
   function startEdit(c) {
     setEditing(c);
+    setCanEnter(true);
     setEntryDate(today());
     setOverdueType('案家因素');
     setOverdueReason('');
+    setUnableReason(UNABLE_ENTRY_REASONS[0]);
     setSaveMsg(null);
   }
 
   async function handleSave() {
+    if (!canEnter) {
+      const updates = { unableToEnter: true, unableToEnterReason: unableReason, entryDate: '' };
+      await updateCase(editing.id, updates);
+      setEditing(null);
+      setSaveMsg(null);
+      return;
+    }
     if (!entryDate) { setSaveMsg({ type: 'error', text: '請選擇進場日期' }); return; }
     const days = daysBetween(editing.referralDate, entryDate);
-    const updates = { entryDate };
+    const updates = { entryDate, unableToEnter: false, unableToEnterReason: '' };
     if (days > 5) { updates.overdueType = overdueType; updates.overdueReason = overdueReason; }
     await updateCase(editing.id, updates);
     setEditing(null);
@@ -71,19 +82,38 @@ export default function Entry() {
                 {isEditing && (
                   <div style={{ marginTop: 14, padding: 16, background: C.bg, borderRadius: 12 }}>
                     {saveMsg && <Alert type={saveMsg.type}>{saveMsg.text}</Alert>}
-                    <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 10 }}>
-                      <label style={{ fontSize: 12, color: C.muted, whiteSpace: 'nowrap' }}>進場日期：</label>
-                      <Input type="date" value={entryDate} onChange={e => setEntryDate(e.target.value)} style={{ width: 160 }} />
-                      {editDays > 0 && <span style={{ fontSize: 12, color: editDays > 5 ? C.alert : C.success }}>共 {editDays} 天</span>}
+                    <div style={{ display: 'flex', gap: 16, marginBottom: 10 }}>
+                      {[{ v: true, l: '可進場' }, { v: false, l: '無法進場' }].map(opt => (
+                        <label key={opt.l} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 13 }}>
+                          <input type="radio" checked={canEnter === opt.v} onChange={() => setCanEnter(opt.v)} />
+                          {opt.l}
+                        </label>
+                      ))}
                     </div>
-                    {editDays > 5 && (
+                    {canEnter ? (
                       <>
-                        <div style={{ background: C.alertL, borderRadius: 8, padding: '8px 12px', fontSize: 12, color: C.alert, marginBottom: 10 }}>⚠️ 進場超過5天，請填寫逾期原因</div>
-                        <Select value={overdueType} onChange={e => setOverdueType(e.target.value)} style={{ marginBottom: 8, fontSize: 12 }}>
-                          <option>案家因素</option><option>單位因素</option>
-                        </Select>
-                        <Input value={overdueReason} onChange={e => setOverdueReason(e.target.value)} placeholder="請輸入逾期原因說明" style={{ marginBottom: 10, fontSize: 12 }} />
+                        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 10 }}>
+                          <label style={{ fontSize: 12, color: C.muted, whiteSpace: 'nowrap' }}>進場日期：</label>
+                          <Input type="date" value={entryDate} onChange={e => setEntryDate(e.target.value)} style={{ width: 160 }} />
+                          {editDays > 0 && <span style={{ fontSize: 12, color: editDays > 5 ? C.alert : C.success }}>共 {editDays} 天</span>}
+                        </div>
+                        {editDays > 5 && (
+                          <>
+                            <div style={{ background: C.alertL, borderRadius: 8, padding: '8px 12px', fontSize: 12, color: C.alert, marginBottom: 10 }}>⚠️ 進場超過5天，請填寫逾期原因</div>
+                            <Select value={overdueType} onChange={e => setOverdueType(e.target.value)} style={{ marginBottom: 8, fontSize: 12 }}>
+                              <option>案家因素</option><option>單位因素</option>
+                            </Select>
+                            <Input value={overdueReason} onChange={e => setOverdueReason(e.target.value)} placeholder="請輸入逾期原因說明" style={{ marginBottom: 10, fontSize: 12 }} />
+                          </>
+                        )}
                       </>
+                    ) : (
+                      <div style={{ marginBottom: 10 }}>
+                        <label style={{ fontSize: 12, color: C.muted, whiteSpace: 'nowrap', display: 'block', marginBottom: 6 }}>無法進場原因：</label>
+                        <Select value={unableReason} onChange={e => setUnableReason(e.target.value)} style={{ fontSize: 12 }}>
+                          {UNABLE_ENTRY_REASONS.map(r => <option key={r}>{r}</option>)}
+                        </Select>
+                      </div>
                     )}
                     <div style={{ display: 'flex', gap: 8 }}>
                       <BtnSmall onClick={handleSave} style={{ background: C.success, color: '#fff', border: 'none' }}>確認儲存</BtnSmall>
@@ -115,16 +145,16 @@ export default function Entry() {
               </thead>
               <tbody>
                 {completed.map((c, i) => {
-                  const days = daysBetween(c.referralDate, c.entryDate);
+                  const days = c.entryDate ? daysBetween(c.referralDate, c.entryDate) : 0;
                   return (
                     <tr key={c.id} style={{ borderBottom: `1px solid ${C.border}`, background: i % 2 === 1 ? `${C.bg}50` : '' }}>
                       <td style={{ padding: '10px 14px' }}>{c.referralDate}</td>
                       <td style={{ padding: '10px 14px', fontWeight: 500 }}>{c.clientName}</td>
                       <td style={{ padding: '10px 14px' }}><Badge>{c.codeType}</Badge></td>
                       <td style={{ padding: '10px 14px', maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.unit}</td>
-                      <td style={{ padding: '10px 14px' }}>{c.entryDate}</td>
-                      <td style={{ padding: '10px 14px' }}><span style={{ color: days > 5 ? C.alert : C.success, fontWeight: 500 }}>{days} 天</span></td>
-                      <td style={{ padding: '10px 14px', fontSize: 12, color: C.muted }}>{c.overdueType ? `${c.overdueType}：${c.overdueReason}` : '—'}</td>
+                      <td style={{ padding: '10px 14px' }}>{c.unableToEnter ? <span style={{ color: C.alert }}>無法進場</span> : c.entryDate}</td>
+                      <td style={{ padding: '10px 14px' }}>{c.unableToEnter ? '—' : <span style={{ color: days > 5 ? C.alert : C.success, fontWeight: 500 }}>{days} 天</span>}</td>
+                      <td style={{ padding: '10px 14px', fontSize: 12, color: C.muted }}>{c.unableToEnter ? c.unableToEnterReason : c.overdueType ? `${c.overdueType}：${c.overdueReason}` : '—'}</td>
                     </tr>
                   );
                 })}
