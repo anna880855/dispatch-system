@@ -353,9 +353,9 @@ function ExportTab() {
     const od = days && days > 5 ? days - 5 : '';
     const mgr = getManagerName(users, c.managerId);
     const mon = getMonth(c.referralDate);
-    if (type === 'BA') return { 服務區域: c.region, 派案日期: c.referralDate, 派案月份: mon, 個案姓名: c.clientName, 個管人員: mgr, 服務碼別: c.codeType, 派案單位: c.unit, 新舊案: c.caseType, 是否為輪派: c.isRotating ? '是' : '否', 派案原因: c.referralReason, 承接狀態: c.status, 未承接原因: c.rejectReason, 進場日: c.entryDate, 逾期進場天數: od, 逾期因素: c.overdueType, 逾期原因: c.overdueReason, 案件ID: c.id || '' };
+    if (type === 'BA') return { 服務區域: c.region, 派案日期: c.referralDate, 派案月份: mon, 個案姓名: c.clientName, 個管人員: mgr, 服務碼別: c.codeType, 派案單位: c.unit, 新舊案: c.caseType, 是否為輪派: c.isRotating ? '是' : '否', 派案原因: c.referralReason, 承接狀態: c.status, 未承接原因: c.rejectReason, 進場日: c.entryDate, 逾期進場天數: od, 逾期因素: c.overdueType, 逾期原因: c.overdueReason, 無法進場: c.unableToEnter ? '是' : '否', 無法進場原因: c.unableToEnterReason || '', 案件ID: c.id || '' };
     if (type === 'DA01') return { 服務區域: c.region, 派案日期: c.referralDate, 派車月份: mon, 個案姓名: c.clientName, 派車單位: c.unit, 個管人員: mgr, 是否為輪派: c.isRotating ? '是' : '否', 案件ID: c.id || '' };
-    return { 服務區域: c.region, 派案日期: c.referralDate, 派案月份: mon, 個案姓名: c.clientName, 個管人員: mgr, 派案碼別: c.codeType, 派案單位: c.unit, 承接狀態: c.status, 未承接原因: c.rejectReason, 進場日: c.entryDate, 逾期進場天數: od, 逾期因素: c.overdueType, 逾期原因: c.overdueReason, 案件ID: c.id || '' };
+    return { 服務區域: c.region, 派案日期: c.referralDate, 派案月份: mon, 個案姓名: c.clientName, 個管人員: mgr, 派案碼別: c.codeType, 派案單位: c.unit, 承接狀態: c.status, 未承接原因: c.rejectReason, 進場日: c.entryDate, 逾期進場天數: od, 逾期因素: c.overdueType, 逾期原因: c.overdueReason, 無法進場: c.unableToEnter ? '是' : '否', 無法進場原因: c.unableToEnterReason || '', 案件ID: c.id || '' };
   }
 
   function dlCSV(rows, filename) {
@@ -385,6 +385,7 @@ function ExportTab() {
       進場日: c.entryDate||'',
       逾期進場天數: c.entryDate&&daysBetween(c.referralDate,c.entryDate)>5 ? daysBetween(c.referralDate,c.entryDate)-5 : '',
       逾期因素: c.overdueType||'', 逾期原因: c.overdueReason||'',
+      無法進場: c.unableToEnter?'是':'否', 無法進場原因: c.unableToEnterReason||'',
     }));
     dlCSV(rows, '全部派案紀錄_'+t+'.csv');
   }
@@ -480,6 +481,8 @@ function ImportTab() {
             entryDate: row['進場日'] || '',
             overdueType: row['逾期因素'] || '',
             overdueReason: row['逾期原因'] || '',
+            unableToEnter: row['無法進場'] === '是',
+            unableToEnterReason: row['無法進場原因'] || '',
             createdAt: new Date().toISOString(),
             importedFromSheets: true,
           };
@@ -514,6 +517,8 @@ function ImportTab() {
             entryDate: row['進場日'] || '',
             overdueType: row['逾期因素'] || '',
             overdueReason: row['逾期原因'] || '',
+            unableToEnter: row['無法進場'] === '是',
+            unableToEnterReason: row['無法進場原因'] || '',
             createdAt: new Date().toISOString(),
             importedFromSheets: true,
           };
@@ -632,15 +637,15 @@ function getTabType(code) {
 }
 
 function getHeaders(tabType) {
-  if (tabType === 'BA') return ['服務區域','派案日期','派案月份','個案姓名','個管人員','服務碼別','派案單位','新舊案','是否為輪派','派案原因','承接狀態','未承接原因','進場日','逾期進場天數','逾期因素','逾期原因','案件ID'];
+  if (tabType === 'BA') return ['服務區域','派案日期','派案月份','個案姓名','個管人員','服務碼別','派案單位','新舊案','是否為輪派','派案原因','承接狀態','未承接原因','進場日','逾期進場天數','逾期因素','逾期原因','無法進場','無法進場原因','案件ID'];
   if (tabType === 'DA01') return ['服務區域','派案日期','派車月份','個案姓名','派車單位','個管人員','是否為輪派','案件ID'];
-  return ['服務區域','派案日期','派案月份','個案姓名','個管人員','派案碼別','派案單位','承接狀態','未承接原因','進場日','逾期進場天數','逾期因素','逾期原因','案件ID'];
+  return ['服務區域','派案日期','派案月份','個案姓名','個管人員','派案碼別','派案單位','承接狀態','未承接原因','進場日','逾期進場天數','逾期因素','逾期原因','無法進場','無法進場原因','案件ID'];
 }
 
 function buildRow(tabType, p) {
-  if (tabType === 'BA') return [p.region,p.referralDate,p.month,p.clientName,p.manager,p.codeType,p.unit,p.caseType,p.isRotating,p.referralReason,p.status,p.rejectReason,p.entryDate,p.odDays,p.overdueType,p.overdueReason,p.caseId];
+  if (tabType === 'BA') return [p.region,p.referralDate,p.month,p.clientName,p.manager,p.codeType,p.unit,p.caseType,p.isRotating,p.referralReason,p.status,p.rejectReason,p.entryDate,p.odDays,p.overdueType,p.overdueReason,p.unableToEnter,p.unableToEnterReason,p.caseId];
   if (tabType === 'DA01') return [p.region,p.referralDate,p.month,p.clientName,p.unit,p.manager,p.isRotating,p.caseId];
-  return [p.region,p.referralDate,p.month,p.clientName,p.manager,p.codeType,p.unit,p.status,p.rejectReason,p.entryDate,p.odDays,p.overdueType,p.overdueReason,p.caseId];
+  return [p.region,p.referralDate,p.month,p.clientName,p.manager,p.codeType,p.unit,p.status,p.rejectReason,p.entryDate,p.odDays,p.overdueType,p.overdueReason,p.unableToEnter,p.unableToEnterReason,p.caseId];
 }
 
 // 單筆新增／編輯／刪除（即時同步）
