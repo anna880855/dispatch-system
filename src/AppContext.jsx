@@ -24,7 +24,8 @@ function buildSyncParams(caseData, users) {
     isRotating: caseData.isRotating ? '是' : '否', referralReason: caseData.referralReason || '',
     status: caseData.status || '', rejectReason: caseData.rejectReason || '',
     entryDate: caseData.entryDate || '', odDays, overdueType: caseData.overdueType || '',
-    overdueReason: caseData.overdueReason || ''
+    overdueReason: caseData.overdueReason || '',
+    unableToEnter: caseData.unableToEnter ? '是' : '否', unableToEnterReason: caseData.unableToEnterReason || ''
   };
 }
 

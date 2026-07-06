@@ -77,4 +77,6 @@ export const REJECT_REASONS = {
   SC: ['服務量能已滿', '專業不符', '其他'],
 };
 
-export const REFERRAL_REASONS = ['案家指定', '二輪輪派', '急件處理', '合作單位優先', '加分輪序增加', '其他'];
+export const REFERRAL_REASONS = ['案家指定', '二輪輪派', '急件處理', '合作單位優先', '加分輪序增加', '復評重新派案', '其他'];
+
+export const UNABLE_ENTRY_REASONS = ['個案死亡', '個案住院', '案家反悔更改服務'];
