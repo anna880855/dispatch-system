@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect } from 'react';
 import { fbGet, fbSet, fbUpdate, fbRemove, fbPing, objToArr, arrToObj } from './utils/firebase';
-import { genId, today, daysBetween, getMonth, getManagerName, getCaseYear, getSheetUrl, isClosedCase } from './utils/helpers';
+import { genId, today, daysBetween, getMonth, getManagerName, getCaseYear, getSheetUrl, isClosedCase, DEFAULT_HOLIDAYS, setHolidayDates } from './utils/helpers';
 import { DEFAULT_ROTATING, DEFAULT_NON_ROTATING, DEFAULT_ROTATION_INDEX } from './data/units';
 
 const AppContext = createContext(null);
@@ -58,6 +58,7 @@ export function AppProvider({ children }) {
   const [cases, setCases] = useState([]);
   const [rotationIndex, setRotationIndex] = useState({ ...DEFAULT_ROTATION_INDEX });
   const [sheetsConfig, setSheetsConfig] = useState({ scriptUrl: '' });
+  const [holidays, setHolidays] = useState(DEFAULT_HOLIDAYS);
   const [fbStatus, setFbStatus] = useState('connecting');
   const [ready, setReady] = useState(false);
   const [pendingSyncCount, setPendingSyncCount] = useState(() => loadSyncQueue().length);
@@ -75,13 +76,20 @@ export function AppProvider({ children }) {
 
   async function loadFromFirebase() {
     const timeout = (p, ms = 8000) => Promise.race([p, new Promise((_, r) => setTimeout(() => r(new Error('timeout')), ms))]);
-    const [usersRes, unitsRes, casesRes, rotRes, sheetsRes] = await Promise.allSettled([
+    const [usersRes, unitsRes, casesRes, rotRes, sheetsRes, holRes] = await Promise.allSettled([
       timeout(fbGet('users')),
       timeout(fbGet('units')),
       timeout(fbGet('cases')),
       timeout(fbGet('rotationIndex')),
       timeout(fbGet('sheetsConfig')),
+      timeout(fbGet('holidays')),
     ]);
+
+    // 放假日：Firebase 有資料就以它為準；第一次使用時寫入預設清單
+    if (holRes.status === 'fulfilled') {
+      if (holRes.value) applyHolidays(holRes.value);
+      else await fbSet('holidays', DEFAULT_HOLIDAYS);
+    }
 
     if (usersRes.status === 'fulfilled') {
       if (usersRes.value && Object.keys(usersRes.value).length > 0) {
@@ -296,6 +304,23 @@ export function AppProvider({ children }) {
     await fbSet(`rotationIndex/${key}`, idx);
   }
 
+  // ── 放假日 ──
+  function applyHolidays(obj) {
+    setHolidayDates(Object.keys(obj));
+    setHolidays(obj);
+  }
+  async function addHoliday(date, note) {
+    const next = { ...holidays, [date]: note };
+    applyHolidays(next);
+    await fbSet(`holidays/${date}`, note);
+  }
+  async function removeHoliday(date) {
+    const next = { ...holidays };
+    delete next[date];
+    applyHolidays(next);
+    await fbRemove(`holidays/${date}`);
+  }
+
   // ── Sheets ──
   async function saveSheetsConfig(cfg) {
     setSheetsConfig(cfg);
@@ -345,7 +370,7 @@ export function AppProvider({ children }) {
   const missingSheetYear = ready && !getSheetUrl(sheetsConfig, currentYear) ? currentYear : null;
 
   const value = {
-    missingSheetYear, archiveYear, getArchivedCount,
+    missingSheetYear, archiveYear, getArchivedCount, holidays, addHoliday, removeHoliday,
     currentUser, users, units, cases, rotationIndex, sheetsConfig, fbStatus, ready, pendingSyncCount,
     login, logout, addCase, updateCase, deleteCase,
     saveUsers, saveUnits, saveSheetsConfig, syncToSheets, fullSyncToSheets, exportCSV,

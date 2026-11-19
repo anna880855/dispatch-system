@@ -12,6 +12,7 @@ export default function Admin() {
     { id: 'nonRotating', label: '📌 特約單位' },
     { id: 'export', label: '📤 匯出資料' },
     { id: 'import', label: '📥 匯入舊資料' },
+    { id: 'holidays', label: '📅 放假日' },
     { id: 'sheets', label: '📊 Google Sheets' },
   ];
 
@@ -27,6 +28,7 @@ export default function Admin() {
       {tab === 'nonRotating' && <NonRotatingTab />}
       {tab === 'export' && <ExportTab />}
       {tab === 'import' && <ImportTab />}
+      {tab === 'holidays' && <HolidaysTab />}
     {tab === 'sheets' && <SheetsTab />}
     </div>
   );
@@ -848,6 +850,56 @@ function fullSync(p) {
           </div>
         )}
       </div>
+    </Card>
+  );
+}
+
+
+function HolidaysTab() {
+  const { holidays, addHoliday, removeHoliday } = useApp();
+  const years = [...new Set(Object.keys(holidays).map(d => d.slice(0, 4)))].sort().reverse();
+  const [year, setYear] = useState(years.includes(today().slice(0, 4)) ? today().slice(0, 4) : years[0] || today().slice(0, 4));
+  const [date, setDate] = useState('');
+  const [note, setNote] = useState('');
+  const [msg, setMsg] = useState(null);
+  const list = Object.entries(holidays).filter(([d]) => d.startsWith(year)).sort(([a], [b]) => a.localeCompare(b));
+  const WD = ['日', '一', '二', '三', '四', '五', '六'];
+
+  async function add() {
+    if (!date) { setMsg({ type: 'error', text: '請選擇日期' }); return; }
+    if (holidays[date]) { setMsg({ type: 'error', text: '這一天已在清單中' }); return; }
+    await addHoliday(date, note.trim() || '放假');
+    setMsg({ type: 'success', text: `✓ 已新增 ${date}。Google Sheets 的逾期天數請到「Google Sheets」頁執行該年度完整同步更新。` });
+    setYear(date.slice(0, 4));
+    setDate(''); setNote('');
+  }
+  async function remove(d) {
+    if (!window.confirm(`確定刪除 ${d}（${holidays[d]}）？`)) return;
+    await removeHoliday(d);
+    setMsg({ type: 'success', text: `✓ 已刪除 ${d}` });
+  }
+
+  return (
+    <Card style={{ maxWidth: 620 }}>
+      <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>📅 放假日（計算進場天數時排除）</h3>
+      <p style={{ color: C.muted, fontSize: 13, marginBottom: 16 }}>週六、週日已自動排除，這裡只需列平日的放假日。颱風假等臨時停班請手動新增。</p>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', marginBottom: 12, flexWrap: 'wrap' }}>
+        <div style={{ width: 170 }}><FormField label="日期"><Input type="date" value={date} onChange={e => setDate(e.target.value)} /></FormField></div>
+        <div style={{ flex: 1, minWidth: 160 }}><FormField label="說明"><Input value={note} onChange={e => setNote(e.target.value)} placeholder="例：颱風停班" /></FormField></div>
+        <BtnPrimary onClick={add}>＋ 新增</BtnPrimary>
+      </div>
+      {msg && <Alert type={msg.type}>{msg.text}</Alert>}
+      <div style={{ display: 'flex', gap: 6, margin: '16px 0 12px', flexWrap: 'wrap' }}>
+        {years.map(y => <Tab key={y} id={y} label={`${y} 年`} active={year === y} onClick={setYear} />)}
+      </div>
+      {list.map(([d, n]) => (
+        <div key={d} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 0', borderBottom: `1px solid ${C.border}`, fontSize: 13 }}>
+          <span style={{ width: 130 }}>{d}（{WD[new Date(d + 'T00:00:00').getDay()]}）</span>
+          <span style={{ flex: 1, color: C.muted }}>{n}</span>
+          <BtnSmall onClick={() => remove(d)}>刪除</BtnSmall>
+        </div>
+      ))}
+      {!list.length && <div style={{ fontSize: 12, color: C.muted }}>此年度沒有資料</div>}
     </Card>
   );
 }
