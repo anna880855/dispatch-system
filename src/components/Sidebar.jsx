@@ -10,7 +10,7 @@ const NAV_ITEMS = [
 ];
 
 export default function Sidebar({ page, setPage }) {
-  const { currentUser, logout, fbStatus, pendingSyncCount } = useApp();
+  const { currentUser, logout, fbStatus, pendingSyncCount, missingSheetYear } = useApp();
   const isAdmin = currentUser?.role === 'admin';
   const items = isAdmin ? [...NAV_ITEMS, { id: 'admin', icon: '⚙️', label: '管理後台' }] : NAV_ITEMS;
 
@@ -58,6 +58,14 @@ export default function Sidebar({ page, setPage }) {
             <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#c4a55a', flexShrink: 0 }} />
             <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.55)' }}>
               {pendingSyncCount} 筆待同步至 Sheets
+            </span>
+          </div>
+        )}
+        {isAdmin && missingSheetYear && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', marginBottom: 4 }}>
+            <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#c07a62', flexShrink: 0 }} />
+            <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.55)' }}>
+              {missingSheetYear} 年尚未設定 Sheet 網址
             </span>
           </div>
         )}

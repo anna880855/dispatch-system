@@ -13,6 +13,10 @@ const TW_HOLIDAYS = new Set([
   // 2026
   '2026-01-01','2026-02-17','2026-02-18','2026-02-19','2026-02-20','2026-02-21','2026-02-22','2026-02-23',
   '2026-02-27','2026-04-03','2026-04-06','2026-05-01','2026-06-19','2026-09-25','2026-10-09','2026-10-10',
+  // 2027（人事行政總處 116 年辦公日曆表，僅列平日放假日）
+  '2027-01-01','2027-02-04','2027-02-05','2027-02-08','2027-02-09','2027-02-10','2027-03-01',
+  '2027-04-05','2027-04-06','2027-04-30','2027-06-09','2027-09-15','2027-09-28','2027-10-11',
+  '2027-10-25','2027-12-24','2027-12-31',
 ]);
 
 function toLocalDateStr(date) {
@@ -80,3 +84,24 @@ export const REJECT_REASONS = {
 export const REFERRAL_REASONS = ['案家指定', '二輪輪派', '急件處理', '合作單位優先', '加分輪序增加', '復評重新派案', '其他'];
 
 export const UNABLE_ENTRY_REASONS = ['個案死亡', '個案住院', '案家反悔更改服務'];
+
+// 案件所屬年度：依照會日的年份
+export function getCaseYear(c) {
+  return (c?.referralDate || today()).slice(0, 4);
+}
+
+// 舊版只有單一 scriptUrl，對應 2026 年（含）以前的 Google Sheet
+const LEGACY_LAST_YEAR = '2026';
+
+// 取得某年度對應的 Apps Script 網址；未設定回傳空字串
+export function getSheetUrl(cfg, year) {
+  const url = cfg?.urls?.[year];
+  if (url) return url;
+  if (cfg?.scriptUrl && year <= LEGACY_LAST_YEAR) return cfg.scriptUrl;
+  return '';
+}
+
+// 已結束的案件：不承接、已進場、無法進場，或不需追蹤進場的碼別
+export function isClosedCase(c) {
+  return c.status === '不承接' || !!c.entryDate || !!c.unableToEnter || NO_ENTRY_CODES.includes(c.codeType);
+}
