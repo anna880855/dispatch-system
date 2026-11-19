@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect } from 'react';
 import { fbGet, fbSet, fbUpdate, fbRemove, fbPing, objToArr, arrToObj } from './utils/firebase';
-import { genId, today, daysBetween, getMonth, getManagerName } from './utils/helpers';
+import { genId, today, daysBetween, getMonth, getManagerName, getCaseYear, getSheetUrl, isClosedCase, DEFAULT_HOLIDAYS, setHolidayDates } from './utils/helpers';
 import { DEFAULT_ROTATING, DEFAULT_NON_ROTATING, DEFAULT_ROTATION_INDEX } from './data/units';
 
 const AppContext = createContext(null);
@@ -58,6 +58,7 @@ export function AppProvider({ children }) {
   const [cases, setCases] = useState([]);
   const [rotationIndex, setRotationIndex] = useState({ ...DEFAULT_ROTATION_INDEX });
   const [sheetsConfig, setSheetsConfig] = useState({ scriptUrl: '' });
+  const [holidays, setHolidays] = useState(DEFAULT_HOLIDAYS);
   const [fbStatus, setFbStatus] = useState('connecting');
   const [ready, setReady] = useState(false);
   const [pendingSyncCount, setPendingSyncCount] = useState(() => loadSyncQueue().length);
@@ -75,13 +76,20 @@ export function AppProvider({ children }) {
 
   async function loadFromFirebase() {
     const timeout = (p, ms = 8000) => Promise.race([p, new Promise((_, r) => setTimeout(() => r(new Error('timeout')), ms))]);
-    const [usersRes, unitsRes, casesRes, rotRes, sheetsRes] = await Promise.allSettled([
+    const [usersRes, unitsRes, casesRes, rotRes, sheetsRes, holRes] = await Promise.allSettled([
       timeout(fbGet('users')),
       timeout(fbGet('units')),
       timeout(fbGet('cases')),
       timeout(fbGet('rotationIndex')),
       timeout(fbGet('sheetsConfig')),
+      timeout(fbGet('holidays')),
     ]);
+
+    // 放假日：Firebase 有資料就以它為準；第一次使用時寫入預設清單
+    if (holRes.status === 'fulfilled') {
+      if (holRes.value) applyHolidays(holRes.value);
+      else await fbSet('holidays', DEFAULT_HOLIDAYS);
+    }
 
     if (usersRes.status === 'fulfilled') {
       if (usersRes.value && Object.keys(usersRes.value).length > 0) {
@@ -148,19 +156,59 @@ export function AppProvider({ children }) {
     setPendingSyncCount(remaining.length);
   }
 
-  // 完整同步：抓取 Firebase 目前全部案件，整批送給 Apps Script 完整覆寫三個分頁，
-  // 可一次修正先前因斷線、被攔截等原因漏同步或不一致的資料
-  async function fullSyncToSheets() {
-    const freshConfig = await fbGet('sheetsConfig');
-    const url = (freshConfig && freshConfig.scriptUrl) || sheetsConfig?.scriptUrl;
-    if (!url) throw new Error('尚未設定 Apps Script 網址');
+  // 取得最新的 sheetsConfig（直接讀 Firebase，避免 closure 抓到舊值）
+  async function freshSheetsConfig() {
+    return (await fbGet('sheetsConfig')) || sheetsConfig;
+  }
+
+  // 完整同步（依年度）：該年度全部案件（含已封存）整批送給該年度的 Apps Script，
+  // 完整覆寫三個分頁，可修正先前漏同步或不一致的資料
+  async function fullSyncToSheets(year) {
+    const url = getSheetUrl(await freshSheetsConfig(), year);
+    if (!url) throw new Error(`尚未設定 ${year} 年的 Apps Script 網址`);
     const freshCasesRaw = await fbGet('cases');
-    const list = freshCasesRaw ? objToArr(freshCasesRaw) : cases;
+    const active = freshCasesRaw ? objToArr(freshCasesRaw) : cases;
+    const archivedRaw = await fbGet(`archive/${year}/cases`);
+    const archived = archivedRaw ? objToArr(archivedRaw) : [];
+    const list = [...active.filter(c => getCaseYear(c) === year), ...archived];
     const freshUsersRaw = await fbGet('users');
     const usersForNames = freshUsersRaw ? objToArr(freshUsersRaw) : users;
     const items = list.map(c => buildSyncParams(c, usersForNames));
     await postToSheets(url, { action: 'fullSync', items });
     return items.length;
+  }
+
+  // 年度封存：把指定年度「已結束」的案件從 cases 移到 archive/{year}/cases。
+  // 執行前先下載 cases 完整備份；未結束的案件保留，處理完可再執行一次。
+  async function archiveYear(year) {
+    if (year >= today().slice(0, 4)) throw new Error('只能封存今年以前的年度');
+    const freshCasesRaw = await fbGet('cases');
+    if (!freshCasesRaw) throw new Error('無法讀取案件資料，請確認連線後再試');
+    const all = objToArr(freshCasesRaw);
+    const yearCases = all.filter(c => getCaseYear(c) === year);
+    const toArchive = yearCases.filter(isClosedCase);
+    const remaining = yearCases.filter(c => !isClosedCase(c));
+    if (!toArchive.length) return { archived: 0, remaining };
+
+    downloadJSON(freshCasesRaw, `派案系統備份_封存${year}前_${today()}.json`);
+
+    // 單次多路徑更新：寫入封存與刪除 cases 同時成功或同時失敗
+    const updates = {};
+    toArchive.forEach(c => {
+      updates[`archive/${year}/cases/${c.id}`] = c;
+      updates[`cases/${c.id}`] = null;
+    });
+    const res = await fbUpdate('', updates);
+    if (res === null) throw new Error('寫入 Firebase 失敗，資料未變動');
+
+    const ids = new Set(toArchive.map(c => c.id));
+    setCases(prev => prev.filter(c => !ids.has(c.id)));
+    return { archived: toArchive.length, remaining };
+  }
+
+  async function getArchivedCount(year) {
+    const r = await fbGet(`archive/${year}/cases`);
+    return r ? Object.keys(r).length : 0;
   }
 
   // ── Auth ──
@@ -178,9 +226,7 @@ export function AppProvider({ children }) {
     const newCase = { ...caseData, id: genId(), createdAt: new Date().toISOString() };
     setCases(prev => [...prev, newCase]);
     await fbSet(`cases/${newCase.id}`, newCase);
-    // 直接從 Firebase 取得最新 sheetsConfig，避免 closure 抓到空值
-    const freshConfig = await fbGet('sheetsConfig');
-    const url = (freshConfig && freshConfig.scriptUrl) || sheetsConfig?.scriptUrl;
+    const url = getSheetUrl(await freshSheetsConfig(), getCaseYear(newCase));
     if (url) {
       syncOrQueue(url, { action: 'add', ...buildSyncParams(newCase, users) });
     }
@@ -192,10 +238,17 @@ export function AppProvider({ children }) {
     await fbUpdate(`cases/${id}`, updates);
     const updated = cases.find(c => c.id === id);
     if (updated) {
-      const freshConfig = await fbGet('sheetsConfig');
-      const url = (freshConfig && freshConfig.scriptUrl) || sheetsConfig?.scriptUrl;
+      const cfg = await freshSheetsConfig();
+      const caseData = { ...updated, ...updates };
+      const oldYear = getCaseYear(updated);
+      const newYear = getCaseYear(caseData);
+      // 照會日改到另一個年度：先從舊年度的 Sheet 移除
+      if (oldYear !== newYear) {
+        const oldUrl = getSheetUrl(cfg, oldYear);
+        if (oldUrl) syncOrQueue(oldUrl, { action: 'delete', caseId: updated.id, codeType: updated.codeType || '' });
+      }
+      const url = getSheetUrl(cfg, newYear);
       if (url) {
-        const caseData = { ...updated, ...updates };
         syncOrQueue(url, { action: 'update', ...buildSyncParams(caseData, users) });
       }
     }
@@ -208,8 +261,7 @@ export function AppProvider({ children }) {
     // 同步刪除到 Google Sheets
     // 直接從 Firebase 取得最新 sheetsConfig，避免 closure 抓到舊值
     if (caseToDelete) {
-      const freshConfig = await fbGet('sheetsConfig');
-      const url = freshConfig?.scriptUrl || sheetsConfig?.scriptUrl;
+      const url = getSheetUrl(await freshSheetsConfig(), getCaseYear(caseToDelete));
       if (url && caseToDelete.id) {
         syncOrQueue(url, { action: 'delete', caseId: caseToDelete.id, codeType: caseToDelete.codeType || '' });
       }
@@ -252,14 +304,31 @@ export function AppProvider({ children }) {
     await fbSet(`rotationIndex/${key}`, idx);
   }
 
+  // ── 放假日 ──
+  function applyHolidays(obj) {
+    setHolidayDates(Object.keys(obj));
+    setHolidays(obj);
+  }
+  async function addHoliday(date, note) {
+    const next = { ...holidays, [date]: note };
+    applyHolidays(next);
+    await fbSet(`holidays/${date}`, note);
+  }
+  async function removeHoliday(date) {
+    const next = { ...holidays };
+    delete next[date];
+    applyHolidays(next);
+    await fbRemove(`holidays/${date}`);
+  }
+
   // ── Sheets ──
   async function saveSheetsConfig(cfg) {
     setSheetsConfig(cfg);
     await fbSet('sheetsConfig', cfg);
   }
 
-  function syncToSheets(caseData, action) {
-    const url = sheetsConfig?.scriptUrl;
+  function syncToSheets(caseData, action, urlOverride) {
+    const url = urlOverride || getSheetUrl(sheetsConfig, getCaseYear(caseData));
     if (!url) return;
 
     if (action === 'delete') {
@@ -271,6 +340,17 @@ export function AppProvider({ children }) {
   }
 
   // ── Export ──
+  function downloadJSON(obj, filename) {
+    const blob = new Blob([JSON.stringify(obj, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  }
+
   function exportCSV(data, filename) {
     if (!data.length) return;
     const headers = Object.keys(data[0]);
@@ -285,7 +365,12 @@ export function AppProvider({ children }) {
     document.body.removeChild(a);
   }
 
+  // 今年尚未設定 Sheet 網址時提醒（新案件將無法同步）
+  const currentYear = today().slice(0, 4);
+  const missingSheetYear = ready && !getSheetUrl(sheetsConfig, currentYear) ? currentYear : null;
+
   const value = {
+    missingSheetYear, archiveYear, getArchivedCount, holidays, addHoliday, removeHoliday,
     currentUser, users, units, cases, rotationIndex, sheetsConfig, fbStatus, ready, pendingSyncCount,
     login, logout, addCase, updateCase, deleteCase,
     saveUsers, saveUnits, saveSheetsConfig, syncToSheets, fullSyncToSheets, exportCSV,

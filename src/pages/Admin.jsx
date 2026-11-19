@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useApp } from '../AppContext';
-import { today, daysBetween, getMonth, getManagerName, REGIONS, ROTATING_CODES, CODE_TYPES, genId } from '../utils/helpers';
+import { today, daysBetween, getMonth, getManagerName, REGIONS, ROTATING_CODES, CODE_TYPES, genId, getCaseYear, getSheetUrl, isClosedCase } from '../utils/helpers';
 import { Card, PageHeader, Tab, FormField, Input, Select, BtnPrimary, BtnSecondary, BtnSmall, Alert, Badge, C } from '../components/UI';
 
 export default function Admin() {
@@ -12,6 +12,7 @@ export default function Admin() {
     { id: 'nonRotating', label: '📌 特約單位' },
     { id: 'export', label: '📤 匯出資料' },
     { id: 'import', label: '📥 匯入舊資料' },
+    { id: 'holidays', label: '📅 放假日' },
     { id: 'sheets', label: '📊 Google Sheets' },
   ];
 
@@ -27,6 +28,7 @@ export default function Admin() {
       {tab === 'nonRotating' && <NonRotatingTab />}
       {tab === 'export' && <ExportTab />}
       {tab === 'import' && <ImportTab />}
+      {tab === 'holidays' && <HolidaysTab />}
     {tab === 'sheets' && <SheetsTab />}
     </div>
   );
@@ -580,33 +582,73 @@ function ImportTab() {
 }
 
 function SheetsTab() {
-  const { sheetsConfig, saveSheetsConfig, syncToSheets, fullSyncToSheets, cases } = useApp();
-  const [url, setUrl] = useState(sheetsConfig.scriptUrl || '');
+  const { sheetsConfig, saveSheetsConfig, syncToSheets, fullSyncToSheets, cases, archiveYear, getArchivedCount } = useApp();
+  const currentYear = today().slice(0, 4);
+  const nextYear = String(Number(currentYear) + 1);
+  const caseYears = cases.map(c => getCaseYear(c));
+  const initUrls = {};
+  // 舊版單一網址視為目前已設定年度（2026 含以前）的網址
+  new Set([...caseYears, currentYear, nextYear, ...Object.keys(sheetsConfig.urls || {})]).forEach(y => {
+    initUrls[y] = getSheetUrl(sheetsConfig, y);
+  });
+  const [urls, setUrls] = useState(initUrls);
+  const years = Object.keys(urls).sort().reverse();
+  const [newYear, setNewYear] = useState('');
   const [msg, setMsg] = useState(null);
   const [syncing, setSyncing] = useState(false);
+  const [syncYear, setSyncYear] = useState(currentYear);
+  const pastYears = [...new Set(caseYears)].filter(y => y < currentYear).sort().reverse();
+  const [archYear, setArchYear] = useState(pastYears[0] || '');
+  const [archiving, setArchiving] = useState(false);
+  const [remainingList, setRemainingList] = useState(null);
 
   async function save() {
-    await saveSheetsConfig({ scriptUrl: url });
+    const clean = {};
+    Object.entries(urls).forEach(([y, u]) => { if (u && u.trim()) clean[y] = u.trim(); });
+    await saveSheetsConfig({ ...sheetsConfig, urls: clean });
     setMsg({ type: 'success', text: '✓ 設定已儲存' });
   }
-  async function test() {
-    if (!url) { setMsg({ type: 'error', text: '請先填寫網址' }); return; }
+  function addYear() {
+    if (!/^\d{4}$/.test(newYear)) { setMsg({ type: 'error', text: '請輸入西元年，例如 2028' }); return; }
+    setUrls(prev => ({ ...prev, [newYear]: prev[newYear] || '' }));
+    setNewYear('');
+  }
+  function test(year) {
+    const url = urls[year];
+    if (!url) { setMsg({ type: 'error', text: `請先填寫 ${year} 年網址` }); return; }
     setMsg({ type: 'warn', text: '測試中…' });
-    syncToSheets({ id: 'test-' + Date.now(), region: '測試區', referralDate: '2026-01-01', managerId: 'u1', clientName: '測試個案', codeType: 'BA', isRotating: true, unit: '測試單位', caseType: '新案', status: '承接', rejectReason: '', referralReason: '', entryDate: '' }, 'add');
-    setTimeout(() => setMsg({ type: 'success', text: '✓ 已送出！請到 Google Sheets「BA碼派案紀錄」確認是否出現「測試個案」。' }), 1500);
+    syncToSheets({ id: 'test-' + Date.now(), region: '測試區', referralDate: `${year}-01-01`, managerId: 'u1', clientName: '測試個案', codeType: 'BA', isRotating: true, unit: '測試單位', caseType: '新案', status: '承接', rejectReason: '', referralReason: '', entryDate: '' }, 'add', url);
+    setTimeout(() => setMsg({ type: 'success', text: `✓ 已送出！請到 ${year} 年 Google Sheets「BA碼派案紀錄」確認是否出現「測試個案」，確認後可手動刪除該列。` }), 1500);
   }
   async function runFullSync() {
-    if (!url) { setMsg({ type: 'error', text: '請先填寫並儲存網址' }); return; }
-    if (!window.confirm(`即將把系統目前全部 ${cases.length} 筆案件資料完整送到 Google Sheets，並覆寫「BA碼派案紀錄」「交通車派案紀錄」「非輪派單位照會紀錄」三個分頁的內容（含修正先前漏同步、不一致的資料）。確定要繼續嗎？`)) return;
+    if (!getSheetUrl(sheetsConfig, syncYear)) { setMsg({ type: 'error', text: `請先填寫並儲存 ${syncYear} 年網址` }); return; }
+    if (!window.confirm(`即將把 ${syncYear} 年全部案件（含已封存）完整送到 ${syncYear} 年的 Google Sheets，並覆寫「BA碼派案紀錄」「交通車派案紀錄」「非輪派單位照會紀錄」三個分頁的內容。確定要繼續嗎？`)) return;
     setSyncing(true);
     setMsg({ type: 'warn', text: '完整同步中，請稍候…' });
     try {
-      const count = await fullSyncToSheets();
-      setMsg({ type: 'success', text: `✓ 已送出 ${count} 筆案件資料，請到 Google Sheets 確認三個分頁內容。` });
+      const count = await fullSyncToSheets(syncYear);
+      setMsg({ type: 'success', text: `✓ 已送出 ${syncYear} 年 ${count} 筆案件資料，請到 Google Sheets 確認三個分頁內容。` });
     } catch (e) {
       setMsg({ type: 'error', text: `✗ 完整同步失敗：${e.message}` });
     }
     setSyncing(false);
+  }
+  async function runArchive() {
+    if (!archYear) return;
+    const yearCases = cases.filter(c => getCaseYear(c) === archYear);
+    const closed = yearCases.filter(isClosedCase).length;
+    if (!window.confirm(`即將封存 ${archYear} 年已結束的 ${closed} 筆案件：\n1. 先自動下載完整備份檔（請另存到歸檔資料夾）\n2. 這些案件移出系統，之後無法在系統內查詢或修改\n3. 未結束的 ${yearCases.length - closed} 筆保留\n\n建議先對 ${archYear} 年執行一次「完整同步」再封存。確定要繼續嗎？`)) return;
+    setArchiving(true);
+    setMsg({ type: 'warn', text: '封存中，請稍候…' });
+    try {
+      const r = await archiveYear(archYear);
+      const total = await getArchivedCount(archYear);
+      setRemainingList(r.remaining);
+      setMsg({ type: 'success', text: `✓ 本次封存 ${r.archived} 筆（${archYear} 年累計封存 ${total} 筆）；尚未結束 ${r.remaining.length} 筆。` });
+    } catch (e) {
+      setMsg({ type: 'error', text: `✗ 封存失敗：${e.message}` });
+    }
+    setArchiving(false);
   }
 
   const appsScript = `function doGet(e) {
@@ -733,39 +775,131 @@ function fullSync(p) {
 
   return (
     <Card style={{ maxWidth: 620 }}>
-      <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>📊 Google Sheets 即時同步</h3>
-      <p style={{ color: C.muted, fontSize: 13, marginBottom: 20 }}>每次新增、編輯或刪除派案紀錄，自動同步寫入 Google Sheets（編輯會整列覆寫，含碼別變更時自動移動分頁）</p>
+      <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>📊 Google Sheets 即時同步（每年一份）</h3>
+      <p style={{ color: C.muted, fontSize: 13, marginBottom: 20 }}>案件依「照會日」的年份，寫入該年度的 Google Sheets。跨年後補填前一年案件，仍會寫回前一年的檔案。</p>
       <div style={{ background: C.accentL, borderRadius: 10, padding: '12px 16px', marginBottom: 20, fontSize: 12, color: C.accent }}>
-        <strong>設定步驟：</strong><br />
-        1. Google Sheets → 擴充功能 → Apps Script<br />
+        <strong>新年度設定步驟：</strong><br />
+        1. 新建一份 Google Sheets → 擴充功能 → Apps Script<br />
         2. 貼上下方程式碼 → Deploy → New deployment → Web app<br />
         3. Execute as: Me / Who has access: Anyone → Deploy<br />
-        4. 複製網址貼到下方<br />
-        <strong>※ 已改用 doPost 傳輸並支援完整同步，若先前已部署過，請重新 Deploy 一個新版本（New deployment）才會套用。</strong>
+        4. 複製網址貼到下方對應年度 → 儲存設定 → 測試連線
       </div>
       <div style={{ marginBottom: 16 }}>
-        <label style={{ display: 'block', fontSize: 12, color: C.muted, marginBottom: 6, fontWeight: 500 }}>Apps Script 程式碼（點下方全選複製）</label>
+        <label style={{ display: 'block', fontSize: 12, color: C.muted, marginBottom: 6, fontWeight: 500 }}>Apps Script 程式碼（點下方全選複製，每年相同）</label>
         <textarea
           readOnly onClick={e => e.target.select()}
           style={{ width: '100%', height: 200, borderRadius: 10, border: `1px solid ${C.border}`, background: C.bg, padding: 12, fontSize: 11, fontFamily: 'monospace', resize: 'vertical', boxSizing: 'border-box' }}
           value={appsScript}
         />
       </div>
-      <FormField label="Apps Script 網址（部署後取得）">
-        <Input value={url} onChange={e => setUrl(e.target.value)} placeholder="https://script.google.com/macros/s/xxxxx/exec" />
-      </FormField>
+      {years.map(y => (
+        <div key={y} style={{ display: 'flex', gap: 8, alignItems: 'flex-end', marginBottom: 12 }}>
+          <div style={{ flex: 1 }}>
+            <FormField label={`${y} 年 Apps Script 網址`}>
+              <Input value={urls[y] || ''} onChange={e => setUrls(prev => ({ ...prev, [y]: e.target.value }))} placeholder="https://script.google.com/macros/s/xxxxx/exec" />
+            </FormField>
+          </div>
+          <BtnSmall onClick={() => test(y)} style={{ marginBottom: 2 }}>🧪 測試</BtnSmall>
+        </div>
+      ))}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+        <Input value={newYear} onChange={e => setNewYear(e.target.value)} placeholder="新增年度，例如 2028" style={{ width: 200 }} />
+        <BtnSmall onClick={addYear}>＋ 新增年度</BtnSmall>
+      </div>
       {msg && <Alert type={msg.type}>{msg.text}</Alert>}
       <div style={{ display: 'flex', gap: 10, marginTop: 16, flexWrap: 'wrap' }}>
         <BtnPrimary onClick={save}>儲存設定</BtnPrimary>
-        <BtnSecondary onClick={test}>🧪 測試連線</BtnSecondary>
       </div>
+
       <div style={{ marginTop: 24, paddingTop: 20, borderTop: `1px solid ${C.border}` }}>
-        <h4 style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>🔄 完整同步</h4>
+        <h4 style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>🔄 完整同步（依年度）</h4>
         <p style={{ color: C.muted, fontSize: 12, marginBottom: 12 }}>
-          若曾經斷線或懷疑有案件漏同步到 Google Sheets，可執行完整同步：會用系統目前的全部案件資料，完整覆寫三個分頁的內容，找回任何遺漏或不一致的資料。
+          用系統資料（含已封存）完整覆寫該年度 Google Sheets 的三個分頁，修正漏同步或不一致的資料。
         </p>
-        <BtnSecondary onClick={runFullSync} disabled={syncing}>{syncing ? '同步中…' : `🔄 執行完整同步（共 ${cases.length} 筆）`}</BtnSecondary>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <Select value={syncYear} onChange={e => setSyncYear(e.target.value)} style={{ width: 120 }}>
+            {years.map(y => <option key={y} value={y}>{y} 年</option>)}
+          </Select>
+          <BtnSecondary onClick={runFullSync} disabled={syncing}>{syncing ? '同步中…' : `🔄 執行 ${syncYear} 年完整同步`}</BtnSecondary>
+        </div>
       </div>
+
+      <div style={{ marginTop: 24, paddingTop: 20, borderTop: `1px solid ${C.border}` }}>
+        <h4 style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>🗄️ 年度封存</h4>
+        <p style={{ color: C.muted, fontSize: 12, marginBottom: 12 }}>
+          將前一年度已結束的案件（不承接、已進場、無法進場、免追蹤進場碼別）移出系統，減少系統載入的流量。執行前會自動下載完整備份檔。未結束的案件保留，處理完可再執行一次。建議次年 1 月底後、完成該年度完整同步再執行。
+        </p>
+        {pastYears.length === 0 ? (
+          <div style={{ fontSize: 12, color: C.muted }}>目前沒有可封存的年度</div>
+        ) : (
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <Select value={archYear} onChange={e => { setArchYear(e.target.value); setRemainingList(null); }} style={{ width: 120 }}>
+              {pastYears.map(y => <option key={y} value={y}>{y} 年</option>)}
+            </Select>
+            <BtnSecondary onClick={runArchive} disabled={archiving}>
+              {archiving ? '封存中…' : `🗄️ 封存 ${archYear} 年（可封存 ${cases.filter(c => getCaseYear(c) === archYear && isClosedCase(c)).length} 筆）`}
+            </BtnSecondary>
+          </div>
+        )}
+        {remainingList && remainingList.length > 0 && (
+          <div style={{ marginTop: 12, fontSize: 12 }}>
+            <div style={{ color: C.warning, marginBottom: 6 }}>以下案件尚未結束（未填進場日），請處理後再封存一次：</div>
+            {remainingList.map(c => (
+              <div key={c.id} style={{ color: C.muted }}>{c.referralDate}　{c.region}　{c.clientName}　{c.codeType}　{c.unit}</div>
+            ))}
+          </div>
+        )}
+      </div>
+    </Card>
+  );
+}
+
+
+function HolidaysTab() {
+  const { holidays, addHoliday, removeHoliday } = useApp();
+  const years = [...new Set(Object.keys(holidays).map(d => d.slice(0, 4)))].sort().reverse();
+  const [year, setYear] = useState(years.includes(today().slice(0, 4)) ? today().slice(0, 4) : years[0] || today().slice(0, 4));
+  const [date, setDate] = useState('');
+  const [note, setNote] = useState('');
+  const [msg, setMsg] = useState(null);
+  const list = Object.entries(holidays).filter(([d]) => d.startsWith(year)).sort(([a], [b]) => a.localeCompare(b));
+  const WD = ['日', '一', '二', '三', '四', '五', '六'];
+
+  async function add() {
+    if (!date) { setMsg({ type: 'error', text: '請選擇日期' }); return; }
+    if (holidays[date]) { setMsg({ type: 'error', text: '這一天已在清單中' }); return; }
+    await addHoliday(date, note.trim() || '放假');
+    setMsg({ type: 'success', text: `✓ 已新增 ${date}。Google Sheets 的逾期天數請到「Google Sheets」頁執行該年度完整同步更新。` });
+    setYear(date.slice(0, 4));
+    setDate(''); setNote('');
+  }
+  async function remove(d) {
+    if (!window.confirm(`確定刪除 ${d}（${holidays[d]}）？`)) return;
+    await removeHoliday(d);
+    setMsg({ type: 'success', text: `✓ 已刪除 ${d}` });
+  }
+
+  return (
+    <Card style={{ maxWidth: 620 }}>
+      <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>📅 放假日（計算進場天數時排除）</h3>
+      <p style={{ color: C.muted, fontSize: 13, marginBottom: 16 }}>週六、週日已自動排除，這裡只需列平日的放假日。颱風假等臨時停班請手動新增。</p>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', marginBottom: 12, flexWrap: 'wrap' }}>
+        <div style={{ width: 170 }}><FormField label="日期"><Input type="date" value={date} onChange={e => setDate(e.target.value)} /></FormField></div>
+        <div style={{ flex: 1, minWidth: 160 }}><FormField label="說明"><Input value={note} onChange={e => setNote(e.target.value)} placeholder="例：颱風停班" /></FormField></div>
+        <BtnPrimary onClick={add}>＋ 新增</BtnPrimary>
+      </div>
+      {msg && <Alert type={msg.type}>{msg.text}</Alert>}
+      <div style={{ display: 'flex', gap: 6, margin: '16px 0 12px', flexWrap: 'wrap' }}>
+        {years.map(y => <Tab key={y} id={y} label={`${y} 年`} active={year === y} onClick={setYear} />)}
+      </div>
+      {list.map(([d, n]) => (
+        <div key={d} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 0', borderBottom: `1px solid ${C.border}`, fontSize: 13 }}>
+          <span style={{ width: 130 }}>{d}（{WD[new Date(d + 'T00:00:00').getDay()]}）</span>
+          <span style={{ flex: 1, color: C.muted }}>{n}</span>
+          <BtnSmall onClick={() => remove(d)}>刪除</BtnSmall>
+        </div>
+      ))}
+      {!list.length && <div style={{ fontSize: 12, color: C.muted }}>此年度沒有資料</div>}
     </Card>
   );
 }
